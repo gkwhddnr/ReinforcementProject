@@ -91,5 +91,4 @@ venv/
 *.bak
 .DS_Store
 Thumbs.db
-.codex/*
-!.codex/config.toml
+/.codex/
