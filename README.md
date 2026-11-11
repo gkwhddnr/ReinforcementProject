@@ -6,10 +6,17 @@
 
 - Unity **6.3 LTS (6000.3.28f1)**
 - Universal Render Pipeline (URP) **17.3.0**
-- 강화학습 도구: Unity ML-Agents 도입 예정 (현재 패키지 미설치)
+- 강화학습 도구: Unity ML-Agents **4.2.0** (Python 학습 도구는 별도 설치)
+- Unity MCP: **MCP for Unity 10.3.0** (com.coplaydev.unity-mcp), Git 패키지로 설치
 
 Unity Hub에서 위 Editor 버전을 설치하고 이 저장소의 루트 폴더를 프로젝트로 추가합니다. `Assets`, `Packages`, `ProjectSettings`를 함께 내려받아야 합니다.
 
+## 패키지 설치 및 연결
+
+- Unity에서 처음 프로젝트를 열면 `Packages/manifest.json`과 `Packages/packages-lock.json`에 따라 MCP 및 ML-Agents와 의존 패키지가 복원됩니다. Git 패키지 다운로드를 위해 Git 설치와 네트워크 연결이 필요합니다.
+- MCP는 `https://github.com/CoplayDev/unity-mcp.git?path=/MCPForUnity#main`을 참조하며 현재 잠금 파일의 커밋은 `81542a7e86292b5c4c21b1782c5af23b567f45ce`입니다. 팀원은 잠금 파일을 함께 사용하고 임의 업데이트를 피합니다.
+- MCP 패키지 설치와 AI 클라이언트 연결은 별개입니다. 각자 Unity MCP 창에서 서버 실행 및 사용하는 클라이언트 연결을 설정합니다. 개인 MCP 설정과 AI 지침서는 공유하지 않습니다.
+- ML-Agents Unity 패키지는 설치되어 있습니다. 실제 학습 실행에는 호환되는 Python 학습 환경을 별도로 구성해야 합니다. 현재 학습 환경이나 에이전트 구현은 포함하지 않습니다.
 ## 담당 및 폴더
 
 | 담당 | 경로 | 역할 |
