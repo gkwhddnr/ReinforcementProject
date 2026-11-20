@@ -38,3 +38,23 @@ AGENTS.override.md
 AGENT.md
 CLAUDE.md
 SKILL.md
+
+# Local third-party asset imports and meshes baked from those assets.
+/Assets/하종욱/LowPolyFPSLite/
+/Assets/하종욱/LowPolyFPSLite.meta
+/Assets/하종욱/Rock/
+/Assets/하종욱/Rock.meta
+/Assets/하종욱/Tree/
+/Assets/하종욱/Tree.meta
+/Assets/하종욱/Sandbag/Models/
+/Assets/하종욱/Sandbag/Models.meta
+/Assets/하종욱/Sandbag/Textures/
+/Assets/하종욱/Sandbag/Textures.meta
+/Assets/하종욱/Sandbag/Prefabs/
+/Assets/하종욱/Sandbag/Prefabs.meta
+/Assets/하종욱/Sandbag/Materials/
+/Assets/하종욱/Sandbag/Materials.meta
+/Assets/하종욱/Sandbag/Generated/Sandbag Arc *.asset
+/Assets/하종욱/Sandbag/Generated/Sandbag Arc *.asset.meta
+!/Assets/하종욱/Sandbag/Generated/Sandbag Arc public *.asset
+!/Assets/하종욱/Sandbag/Generated/Sandbag Arc public *.asset.meta
