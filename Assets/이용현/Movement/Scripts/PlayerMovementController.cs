@@ -1,9 +1,10 @@
 ﻿using UnityEngine;
+using Reinforce.Movement.HFSM;
 
 namespace Reinforce.Movement
 {
     /// <summary>
-    /// 플레이어 이동·회전 및 지면/경사 검사 메인 컨트롤러 (MVP 1단계 - 경사 등반 최적화)
+    /// 플레이어 이동·회전 및 계층형 상태 기계(HFSM) 메인 컨트롤러
     /// </summary>
     [RequireComponent(typeof(CharacterController))]
     public class PlayerMovementController : MonoBehaviour
@@ -30,12 +31,18 @@ namespace Reinforce.Movement
         public float CurrentSlopeAngle { get; private set; } = 0f;
         public Vector3 CurrentVelocity => CharController != null ? CharController.velocity : Vector3.zero;
         public bool IsCrouching => settings != null && Mathf.Approximately(CharController.height, settings.crouchingHeight);
+        public bool IsDead => currentRootState is DeadState;
 
         // 후순위 확장용 외부 속도 배율 (기본값 1.0f)
         public float ExternalSpeedMultiplier { get; set; } = 1.0f;
 
-        // 수직 속도 누적값 (낙하 중력)
-        private float verticalVelocity = 0f;
+        // HFSM 루트 상태들
+        private BaseState currentRootState;
+        public GroundedSuperState GroundedState { get; private set; }
+        public AirborneState AirborneState { get; private set; }
+        public DeadState DeadState { get; private set; }
+
+        public string CurrentStateHierarchyName => currentRootState != null ? currentRootState.GetFullHierarchyName() : "None";
 
         // 진입부 사면 감지용 임시 법선
         private Vector3 hitSlopeNormal = Vector3.up;
@@ -57,24 +64,40 @@ namespace Reinforce.Movement
             {
                 inputProvider = gameObject.AddComponent<PlayerKeyboardInput>();
             }
+
+            // HFSM 초기화
+            GroundedState = new GroundedSuperState(this, null);
+            AirborneState = new AirborneState(this, null);
+            DeadState = new DeadState(this, null);
+            currentRootState = GroundedState;
         }
 
         private void Start()
         {
             ApplyColliderSettings();
             UpdateGroundInfo();
+            currentRootState.Enter();
         }
 
         private void Update()
         {
+            if (IsDead) return;
+
             CurrentInput = inputProvider.GetInput();
             RotateTowards(CurrentInput.LookDirection);
+            currentRootState.Update();
+
+            // 사망 테스트용 K 키 입력 지원 (수동 검증)
+            if (Input.GetKeyDown(KeyCode.K))
+            {
+                Die();
+            }
         }
 
         private void FixedUpdate()
         {
             UpdateGroundInfo();
-            ProcessMovement();
+            currentRootState.FixedUpdate();
             hasRecentSlopeHit = false;
         }
 
@@ -83,7 +106,6 @@ namespace Reinforce.Movement
             if (CharController == null || settings == null) return;
             CharController.radius = settings.colliderRadius;
             CharController.stepOffset = settings.stepOffset;
-            // 핵심: 75도 등반을 허용하기 위해 slopeLimit을 최대 등반각(75도)으로 동기화
             CharController.slopeLimit = Mathf.Max(settings.maxSlopeLimit, 75.0f);
             SetColliderHeight(settings.standingHeight);
         }
@@ -93,6 +115,24 @@ namespace Reinforce.Movement
             if (CharController == null) return;
             CharController.height = height;
             CharController.center = new Vector3(0f, height * 0.5f, 0f);
+        }
+
+        public void ChangeRootState(BaseState newState)
+        {
+            if (currentRootState == newState || newState == null) return;
+            currentRootState?.Exit();
+            currentRootState = newState;
+            currentRootState?.Enter();
+        }
+
+        public void Die()
+        {
+            ChangeRootState(DeadState);
+        }
+
+        public void Revive()
+        {
+            ChangeRootState(GroundedState);
         }
 
         /// <summary>
@@ -105,6 +145,7 @@ namespace Reinforce.Movement
                 CharController = GetComponent<CharacterController>();
                 if (CharController == null) return;
             }
+
             float radius = CharController.radius * 0.95f;
             float bottomSphereOffsetY = CharController.center.y - (CharController.height * 0.5f - CharController.radius);
             Vector3 origin = transform.position + new Vector3(0f, bottomSphereOffsetY + 0.05f, 0f);
@@ -119,14 +160,8 @@ namespace Reinforce.Movement
             }
             else if (hasRecentSlopeHit)
             {
-                // 이동 중 경사면에 닿은 충돌 법선 활용
                 IsGrounded = true;
                 GroundNormal = hitSlopeNormal;
-            }
-            else if (CharController.isGrounded)
-            {
-                IsGrounded = true;
-                GroundNormal = Vector3.up;
             }
             else
             {
@@ -134,7 +169,6 @@ namespace Reinforce.Movement
                 GroundNormal = Vector3.up;
             }
 
-            // 이동 중일 때 진입할 앞쪽 지면(0.3m 앞)을 미리 레이캐스트하여 사면 감지
             Vector3 worldMove = GetWorldMoveDirection(CurrentInput.MoveVector);
             if (worldMove.sqrMagnitude > 0.001f && IsGrounded)
             {
@@ -144,7 +178,6 @@ namespace Reinforce.Movement
                     float forwardSlope = Vector3.Angle(Vector3.up, forwardHit.normal);
                     if (forwardSlope > 5f && forwardSlope <= settings.maxSlopeLimit)
                     {
-                        // 전방 경사로 진입 시 법선을 전방 사면 법선으로 부드럽게 보정
                         GroundNormal = forwardHit.normal;
                     }
                 }
@@ -153,84 +186,11 @@ namespace Reinforce.Movement
             CurrentSlopeAngle = Vector3.Angle(Vector3.up, GroundNormal);
         }
 
-        /// <summary>
-        /// 경사면 벡터 투영(Slope Vector Projection)을 반영한 이동 처리
-        /// </summary>
-        private void ProcessMovement()
-        {
-            Vector3 worldMove = GetWorldMoveDirection(CurrentInput.MoveVector);
-
-            float baseSpeed = settings.walkSpeed;
-            if (CurrentInput.IsSprint && !CurrentInput.IsCrouch)
-            {
-                baseSpeed = settings.sprintSpeed;
-            }
-            else if (CurrentInput.IsCrouch)
-            {
-                baseSpeed = settings.crouchSpeed;
-            }
-
-            // 1. 오르막/내리막 경사도 감속 배율 계산
-            float slopeMultiplier = CalculateSlopeMultiplier(worldMove);
-            float finalSpeed = baseSpeed * slopeMultiplier * ExternalSpeedMultiplier;
-
-            Vector3 moveMotion = Vector3.zero;
-
-            if (worldMove.sqrMagnitude > 0.001f)
-            {
-                if (IsGrounded && CurrentSlopeAngle <= settings.maxSlopeLimit)
-                {
-                    // 경사면 법선에 이동 벡터 투영 -> 경사면을 따라 위로 오르는 Y성분 자연 생성!
-                    Vector3 slopeMoveDir = Vector3.ProjectOnPlane(worldMove, GroundNormal).normalized;
-                    moveMotion = slopeMoveDir * finalSpeed;
-
-                    // 완경사(15도 이하)나 평지일 때만 지면 밀착 보조력 적용
-                    if (CurrentSlopeAngle <= 15.0f)
-                    {
-                        moveMotion.y -= settings.stickToGroundForce * 0.5f;
-                    }
-                }
-                else
-                {
-                    // 공중 체공 또는 75도 초과 경사
-                    moveMotion = worldMove * finalSpeed;
-                }
-            }
-
-            // 2. 수직 중력 계산
-            if (IsGrounded)
-            {
-                if (worldMove.sqrMagnitude <= 0.001f)
-                {
-                    // 정지 상태일 때 지면 밀착
-                    verticalVelocity = -settings.stickToGroundForce;
-                    moveMotion.y = verticalVelocity;
-                }
-                else
-                {
-                    verticalVelocity = moveMotion.y;
-                }
-            }
-            else
-            {
-                // 공중 체공 시 중력 가속
-                verticalVelocity -= settings.gravity * Time.fixedDeltaTime;
-                verticalVelocity = Mathf.Max(verticalVelocity, -30f);
-                moveMotion.y = verticalVelocity;
-            }
-
-            CharController.Move(moveMotion * Time.fixedDeltaTime);
-        }
-
-        /// <summary>
-        /// 이동 중 경사면/벽 충돌 시 법선 수집
-        /// </summary>
         private void OnControllerColliderHit(ControllerColliderHit hit)
         {
             float hitAngle = Vector3.Angle(Vector3.up, hit.normal);
             if (hitAngle > 5f && hitAngle <= settings.maxSlopeLimit)
             {
-                // 오르막 방향인지 확인
                 Vector3 worldMove = GetWorldMoveDirection(CurrentInput.MoveVector);
                 if (worldMove.sqrMagnitude > 0.001f)
                 {
@@ -269,7 +229,6 @@ namespace Reinforce.Movement
             if (dot < 0f) // 오르막 진행
             {
                 float t = CurrentSlopeAngle / settings.maxSlopeLimit;
-                // 개발서 명시 공식: cos(theta) * (1.0 - (theta/75)^2 * 0.6)
                 return Mathf.Clamp(Mathf.Cos(CurrentSlopeAngle * Mathf.Deg2Rad) * (1.0f - (t * t * 0.6f)), 0.15f, 1.0f);
             }
             else // 내리막 진행
@@ -297,27 +256,32 @@ namespace Reinforce.Movement
             IsGrounded = true;
             GroundNormal = Vector3.up;
             CurrentSlopeAngle = 0f;
-            verticalVelocity = 0f;
             ExternalSpeedMultiplier = 1.0f;
             CurrentInput = default;
+
+            Revive();
         }
 
         private void OnGUI()
         {
             if (!showDebugHUD) return;
 
-            const int width = 360;
-            const int height = 210;
-            GUI.Box(new Rect(10, 10, width, height), "[이동 모듈 디버그 HUD - 이용현]");
+            const int width = 380;
+            const int height = 230;
+            GUI.Box(new Rect(10, 10, width, height), "[이동 HFSM 디버그 HUD - 이용현]");
 
             GUILayout.BeginArea(new Rect(20, 35, width - 20, height - 40));
+            
+            // HFSM 현재 상태 표시 (핵심)
+            string stateColor = IsDead ? "red" : (currentRootState is AirborneState ? "yellow" : "cyan");
+            GUILayout.Label($"HFSM 상태: <color={stateColor}><b>{CurrentStateHierarchyName}</b></color>", new GUIStyle(GUI.skin.label) { richText = true });
+
             GUILayout.Label($"위치: {transform.position:F2}");
             float hSpeed = new Vector3(CurrentVelocity.x, 0, CurrentVelocity.z).magnitude;
-            GUILayout.Label($"수평 속도: {hSpeed:F2} m/s (설정: {(CurrentInput.IsSprint ? settings.sprintSpeed : (CurrentInput.IsCrouch ? settings.crouchSpeed : settings.walkSpeed))} m/s)");
+            GUILayout.Label($"수평 속도: {hSpeed:F2} m/s (설정: {(CurrentInput.IsSprint ? settings.sprintSpeed : settings.walkSpeed)} m/s)");
             GUILayout.Label($"지면 접촉 (IsGrounded): {(IsGrounded ? "<color=lime>TRUE (지상)</color>" : "<color=red>FALSE (공중)</color>")}", new GUIStyle(GUI.skin.label) { richText = true, fontStyle = FontStyle.Bold });
             GUILayout.Label($"지면 경사도 (Slope): {CurrentSlopeAngle:F1}° / 등반한계: {settings.maxSlopeLimit}°");
-            GUILayout.Label($"이동 입력 (WASD): ({CurrentInput.MoveVector.x:F1}, {CurrentInput.MoveVector.y:F1})");
-            GUILayout.Label($"자세/상태: {(CurrentInput.IsSprint ? "[전력 질주 (Shift)]" : (CurrentInput.IsCrouch ? "[앉기 (Ctrl)]" : "[보통 걷기]"))}");
+            GUILayout.Label($"이동 입력: ({CurrentInput.MoveVector.x:F1}, {CurrentInput.MoveVector.y:F1}) | 사망 테스트: [K 키]");
             GUILayout.EndArea();
         }
 
