@@ -19,10 +19,24 @@ namespace Reinforce.Movement.HFSM
         {
             base.FixedUpdate();
 
-            // 1. 착지 검사 -> GroundedState로 즉시 복귀
+            // 1. 75도 초과 급경사/절벽 접촉 시 즉시 SlopeSlideState로 전이
+            if (controller.IsTouchingSteepSlope)
+            {
+                controller.ChangeRootState(controller.SlopeSlideState);
+                return;
+            }
+
+            // 2. 착지 검사 -> 경사각에 따라 GroundedState 또는 SlopeSlideState로 복귀
             if (controller.IsGrounded)
             {
-                controller.ChangeRootState(controller.GroundedState);
+                if (controller.CurrentSlopeAngle > controller.Settings.maxSlopeLimit)
+                {
+                    controller.ChangeRootState(controller.SlopeSlideState);
+                }
+                else
+                {
+                    controller.ChangeRootState(controller.GroundedState);
+                }
                 return;
             }
 

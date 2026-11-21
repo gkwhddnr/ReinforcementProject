@@ -22,10 +22,14 @@ namespace Reinforce.Movement.HFSM
 
                 Vector3 velocity = slopeDir * finalSpeed;
 
-                // 완경사/평지 지면 밀착력 보조
-                if (controller.CurrentSlopeAngle <= 15.0f)
+                // 내리막 및 평지 지면 밀착 (Stick-to-ground)
+                Vector3 slopeHorizontal = Vector3.ProjectOnPlane(controller.GroundNormal, Vector3.up).normalized;
+                float dot = Vector3.Dot(worldMove, slopeHorizontal);
+
+                if (dot >= 0f)
                 {
-                    velocity.y -= controller.Settings.stickToGroundForce * 0.5f;
+                    // 평지 또는 내리막: 지면 이탈(체공 오인) 방지 하향 밀착 속도 적용
+                    velocity.y -= controller.Settings.stickToGroundForce;
                 }
 
                 controller.CharController.Move(velocity * Time.fixedDeltaTime);

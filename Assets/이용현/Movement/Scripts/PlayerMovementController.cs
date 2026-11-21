@@ -4,7 +4,7 @@ using Reinforce.Movement.HFSM;
 namespace Reinforce.Movement
 {
     /// <summary>
-    /// 플레이어 이동·회전 및 계층형 상태 기계(HFSM) 메인 컨트롤러
+    /// 플레이어 이동·회전 및 계층형 상태 기계(HFSM) 메인 컨트롤러 (급경사 슬라이딩 완벽 지원)
     /// </summary>
     [RequireComponent(typeof(CharacterController))]
     public class PlayerMovementController : MonoBehaviour
@@ -27,6 +27,7 @@ namespace Reinforce.Movement
 
         // 지면 및 물리 상태 프로퍼티
         public bool IsGrounded { get; private set; }
+        public bool IsTouchingSteepSlope { get; private set; }
         public Vector3 GroundNormal { get; private set; } = Vector3.up;
         public float CurrentSlopeAngle { get; private set; } = 0f;
         public Vector3 CurrentVelocity => CharController != null ? CharController.velocity : Vector3.zero;
@@ -40,11 +41,12 @@ namespace Reinforce.Movement
         private BaseState currentRootState;
         public GroundedSuperState GroundedState { get; private set; }
         public AirborneState AirborneState { get; private set; }
+        public SlopeSlideState SlopeSlideState { get; private set; }
         public DeadState DeadState { get; private set; }
 
         public string CurrentStateHierarchyName => currentRootState != null ? currentRootState.GetFullHierarchyName() : "None";
 
-        // 진입부 사면 감지용 임시 법선
+        // 진입부/측면 사면 충돌 감지용 임시 법선
         private Vector3 hitSlopeNormal = Vector3.up;
         private bool hasRecentSlopeHit = false;
 
@@ -65,9 +67,10 @@ namespace Reinforce.Movement
                 inputProvider = gameObject.AddComponent<PlayerKeyboardInput>();
             }
 
-            // HFSM 초기화
+            // HFSM 루트 상태 초기화
             GroundedState = new GroundedSuperState(this, null);
             AirborneState = new AirborneState(this, null);
+            SlopeSlideState = new SlopeSlideState(this, null);
             DeadState = new DeadState(this, null);
             currentRootState = GroundedState;
         }
@@ -87,7 +90,6 @@ namespace Reinforce.Movement
             RotateTowards(CurrentInput.LookDirection);
             currentRootState.Update();
 
-            // 사망 테스트용 K 키 입력 지원 (수동 검증)
             if (Input.GetKeyDown(KeyCode.K))
             {
                 Die();
@@ -97,6 +99,13 @@ namespace Reinforce.Movement
         private void FixedUpdate()
         {
             UpdateGroundInfo();
+
+            // 75도 초과 급경사 접촉 시 즉시 SlopeSlideState로 전이
+            if (IsTouchingSteepSlope && !(currentRootState is SlopeSlideState))
+            {
+                ChangeRootState(SlopeSlideState);
+            }
+
             currentRootState.FixedUpdate();
             hasRecentSlopeHit = false;
         }
@@ -136,7 +145,7 @@ namespace Reinforce.Movement
         }
 
         /// <summary>
-        /// 지면 상태 정밀 검사 (SphereCast + 전방 사면 검사)
+        /// 지면 및 급경사 상태 정밀 검사
         /// </summary>
         private void UpdateGroundInfo()
         {
@@ -169,8 +178,38 @@ namespace Reinforce.Movement
                 GroundNormal = Vector3.up;
             }
 
+            // 캡슐 하단 주변 급경사(75도 초과) 접촉 정밀 감지 (MeshCollider/TerrainCollider 호환 안전 Raycast 방식)
+            bool foundSteepSlope = false;
+            float checkDist = radius + 0.25f;
+            Vector3[] checkDirs = { transform.forward, -transform.forward, transform.right, -transform.right };
+
+            for (int i = 0; i < checkDirs.Length; i++)
+            {
+                if (Physics.Raycast(origin, checkDirs[i], out RaycastHit sideHit, checkDist, groundLayer, QueryTriggerInteraction.Ignore))
+                {
+                    float angle = Vector3.Angle(Vector3.up, sideHit.normal);
+                    if (angle > settings.maxSlopeLimit && angle < 89.5f)
+                    {
+                        foundSteepSlope = true;
+                        hitSlopeNormal = sideHit.normal;
+                        break;
+                    }
+                }
+            }
+
+            if (foundSteepSlope || (hasRecentSlopeHit && Vector3.Angle(Vector3.up, hitSlopeNormal) > settings.maxSlopeLimit))
+            {
+                IsTouchingSteepSlope = true;
+                GroundNormal = hitSlopeNormal;
+            }
+            else
+            {
+                IsTouchingSteepSlope = false;
+            }
+
+            // 완경사 전방 사면 감지 보조
             Vector3 worldMove = GetWorldMoveDirection(CurrentInput.MoveVector);
-            if (worldMove.sqrMagnitude > 0.001f && IsGrounded)
+            if (worldMove.sqrMagnitude > 0.001f && IsGrounded && !IsTouchingSteepSlope)
             {
                 Vector3 forwardOrigin = origin + worldMove.normalized * 0.3f;
                 if (Physics.Raycast(forwardOrigin, Vector3.down, out RaycastHit forwardHit, distance + 0.4f, groundLayer, QueryTriggerInteraction.Ignore))
@@ -189,18 +228,10 @@ namespace Reinforce.Movement
         private void OnControllerColliderHit(ControllerColliderHit hit)
         {
             float hitAngle = Vector3.Angle(Vector3.up, hit.normal);
-            if (hitAngle > 5f && hitAngle <= settings.maxSlopeLimit)
+            if (hitAngle > 5f && hitAngle < 89.5f)
             {
-                Vector3 worldMove = GetWorldMoveDirection(CurrentInput.MoveVector);
-                if (worldMove.sqrMagnitude > 0.001f)
-                {
-                    Vector3 slopeHorizontal = Vector3.ProjectOnPlane(hit.normal, Vector3.up).normalized;
-                    if (Vector3.Dot(worldMove, slopeHorizontal) < 0f)
-                    {
-                        hitSlopeNormal = hit.normal;
-                        hasRecentSlopeHit = true;
-                    }
-                }
+                hitSlopeNormal = hit.normal;
+                hasRecentSlopeHit = true;
             }
         }
 
@@ -254,6 +285,7 @@ namespace Reinforce.Movement
             CharController.enabled = true;
 
             IsGrounded = true;
+            IsTouchingSteepSlope = false;
             GroundNormal = Vector3.up;
             CurrentSlopeAngle = 0f;
             ExternalSpeedMultiplier = 1.0f;
@@ -272,14 +304,14 @@ namespace Reinforce.Movement
 
             GUILayout.BeginArea(new Rect(20, 35, width - 20, height - 40));
             
-            // HFSM 현재 상태 표시 (핵심)
-            string stateColor = IsDead ? "red" : (currentRootState is AirborneState ? "yellow" : "cyan");
+            // HFSM 현재 상태 표시 (SlopeSlideState는 주황색으로 강조)
+            string stateColor = IsDead ? "red" : (currentRootState is SlopeSlideState ? "orange" : (currentRootState is AirborneState ? "yellow" : "cyan"));
             GUILayout.Label($"HFSM 상태: <color={stateColor}><b>{CurrentStateHierarchyName}</b></color>", new GUIStyle(GUI.skin.label) { richText = true });
 
             GUILayout.Label($"위치: {transform.position:F2}");
             float hSpeed = new Vector3(CurrentVelocity.x, 0, CurrentVelocity.z).magnitude;
             GUILayout.Label($"수평 속도: {hSpeed:F2} m/s (설정: {(CurrentInput.IsSprint ? settings.sprintSpeed : settings.walkSpeed)} m/s)");
-            GUILayout.Label($"지면 접촉 (IsGrounded): {(IsGrounded ? "<color=lime>TRUE (지상)</color>" : "<color=red>FALSE (공중)</color>")}", new GUIStyle(GUI.skin.label) { richText = true, fontStyle = FontStyle.Bold });
+            GUILayout.Label($"지면 접촉: {(IsGrounded ? "<color=lime>TRUE (지상)</color>" : (IsTouchingSteepSlope ? "<color=orange>절벽 접촉</color>" : "<color=red>FALSE (공중)</color>"))}", new GUIStyle(GUI.skin.label) { richText = true, fontStyle = FontStyle.Bold });
             GUILayout.Label($"지면 경사도 (Slope): {CurrentSlopeAngle:F1}° / 등반한계: {settings.maxSlopeLimit}°");
             GUILayout.Label($"이동 입력: ({CurrentInput.MoveVector.x:F1}, {CurrentInput.MoveVector.y:F1}) | 사망 테스트: [K 키]");
             GUILayout.EndArea();
@@ -294,12 +326,12 @@ namespace Reinforce.Movement
             Vector3 origin = transform.position + new Vector3(0f, bottomSphereOffsetY + 0.05f, 0f);
             Vector3 end = origin + Vector3.down * (0.05f + groundCheckDistance);
 
-            Gizmos.color = IsGrounded ? Color.green : Color.red;
+            Gizmos.color = IsGrounded ? Color.green : (IsTouchingSteepSlope ? Color.yellow : Color.red);
             Gizmos.DrawWireSphere(origin, radius);
             Gizmos.DrawWireSphere(end, radius);
             Gizmos.DrawLine(origin, end);
 
-            if (IsGrounded)
+            if (IsGrounded || IsTouchingSteepSlope)
             {
                 Gizmos.color = Color.blue;
                 Gizmos.DrawRay(transform.position, GroundNormal * 1.5f);
