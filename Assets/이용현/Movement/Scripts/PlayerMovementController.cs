@@ -23,7 +23,16 @@ namespace Reinforce.Movement
         public MovementSettingsSO Settings => settings;
         public CharacterController CharController { get; private set; }
         public MovementInputData CurrentInput { get; private set; }
+        public IPlayerInputProvider InputProvider => inputProvider;
         private IPlayerInputProvider inputProvider;
+
+        public void SetInputProvider(IPlayerInputProvider provider)
+        {
+            if (provider != null)
+            {
+                inputProvider = provider;
+            }
+        }
 
         // 지면 및 물리 상태 프로퍼티
         public bool IsGrounded { get; private set; }

@@ -11,6 +11,21 @@ namespace Reinforce.Movement
     {
         private MovementInputData currentAgentInput;
 
+        [Header("Manual / Debug Simulation")]
+        [Tooltip("체크 시 가상 에이전트 행동 벡터를 자동 주입하여 키보드 없이 자율 주행을 테스트합니다.")]
+        [SerializeField] private bool simulateAgentActions = false;
+        [SerializeField] private Vector2 simulatedMoveVector = new Vector2(0f, 1f);
+        [SerializeField] private bool simulatedSprint = false;
+        [SerializeField] private bool simulatedCrouch = false;
+
+        private void Update()
+        {
+            if (simulateAgentActions)
+            {
+                SetActionsFromAgent(simulatedMoveVector.x, simulatedMoveVector.y, simulatedSprint, simulatedCrouch, transform.forward);
+            }
+        }
+
         /// <summary>
         /// ML-Agents Agent.OnActionReceived(ActionBuffers actions) 또는 수동 호출에서 전달받은 값 주입
         /// </summary>
