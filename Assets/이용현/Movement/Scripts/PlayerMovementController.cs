@@ -80,7 +80,23 @@ namespace Reinforce.Movement
             ApplyColliderSettings();
             UpdateGroundInfo();
             currentRootState.Enter();
+
+#if UNITY_EDITOR
+            EnsureCrouchObstacleExists();
+#endif
         }
+
+#if UNITY_EDITOR
+        private void EnsureCrouchObstacleExists()
+        {
+            if (FindFirstObjectByType<CrouchTestObstacle>() == null)
+            {
+                GameObject tunnel = new GameObject("CrouchTestObstacle_Tunnel");
+                tunnel.transform.position = new Vector3(0f, 0f, -5f);
+                tunnel.AddComponent<CrouchTestObstacle>();
+            }
+        }
+#endif
 
         private void Update()
         {
@@ -93,6 +109,11 @@ namespace Reinforce.Movement
             if (Input.GetKeyDown(KeyCode.K))
             {
                 Die();
+            }
+
+            if (Input.GetKeyDown(KeyCode.R))
+            {
+                ResetForEpisode(new Vector3(0f, 1f, 0f), Quaternion.identity);
             }
         }
 
@@ -110,6 +131,8 @@ namespace Reinforce.Movement
             hasRecentSlopeHit = false;
         }
 
+        private readonly Collider[] standUpCheckBuffer = new Collider[8];
+
         public void ApplyColliderSettings()
         {
             if (CharController == null || settings == null) return;
@@ -124,6 +147,61 @@ namespace Reinforce.Movement
             if (CharController == null) return;
             CharController.height = height;
             CharController.center = new Vector3(0f, height * 0.5f, 0f);
+        }
+
+        /// <summary>
+        /// 앉기/서기 상태에 따라 CharacterController 높이 및 시각적 모델(Visual/Visor) 크기/위치 동기화
+        /// </summary>
+        public void SetCrouchVisual(bool isCrouch)
+        {
+            if (settings == null) return;
+            float targetHeight = isCrouch ? settings.crouchingHeight : settings.standingHeight;
+            SetColliderHeight(targetHeight);
+
+            Transform visual = transform.Find("Visual");
+            if (visual != null)
+            {
+                float visualScaleY = targetHeight / settings.standingHeight;
+                visual.localScale = new Vector3(1f, visualScaleY, 1f);
+                visual.localPosition = new Vector3(0f, targetHeight * 0.5f, 0f);
+            }
+
+            Transform visor = transform.Find("Visor");
+            if (visor != null)
+            {
+                float visorY = isCrouch ? 0.9f : 1.5f;
+                visor.localPosition = new Vector3(0f, visorY, 0.4f);
+            }
+        }
+
+        /// <summary>
+        /// 앉기 상태에서 서기(2.0m)로 복귀할 때 머리 위 장애물 충돌 여부 검사
+        /// </summary>
+        public bool CanStandUp()
+        {
+            if (!IsCrouching) return true;
+
+            float radius = settings.colliderRadius * 0.95f;
+            // 머리 위 공간만 정밀 검사하기 위해 앉은 키 높이부터 서는 키 높이까지 캡슐 검사 (바닥 오탐지 원천 방지)
+            Vector3 lower = transform.position + Vector3.up * settings.crouchingHeight;
+            Vector3 upper = transform.position + Vector3.up * (settings.standingHeight - radius);
+
+            if (upper.y < lower.y)
+            {
+                upper = lower;
+            }
+
+            int hitCount = Physics.OverlapCapsuleNonAlloc(lower, upper, radius, standUpCheckBuffer, groundLayer, QueryTriggerInteraction.Ignore);
+            for (int i = 0; i < hitCount; i++)
+            {
+                Collider col = standUpCheckBuffer[i];
+                if (col != null && col != CharController && col.transform != transform && !col.transform.IsChildOf(transform))
+                {
+                    return false; // 머리 위에 장애물이 있어 일어설 수 없음
+                }
+            }
+
+            return true;
         }
 
         public void ChangeRootState(BaseState newState)
@@ -281,7 +359,7 @@ namespace Reinforce.Movement
         {
             CharController.enabled = false;
             transform.SetPositionAndRotation(spawnPosition, spawnRotation);
-            SetColliderHeight(settings.standingHeight);
+            SetCrouchVisual(false); // 서기 자세(2.0m) 및 비주얼 완벽 복구
             CharController.enabled = true;
 
             IsGrounded = true;
@@ -291,15 +369,94 @@ namespace Reinforce.Movement
             ExternalSpeedMultiplier = 1.0f;
             CurrentInput = default;
 
+            if (inputProvider is PlayerAgentInputBridge agentBridge)
+            {
+                agentBridge.ClearInput();
+            }
+
             Revive();
         }
+
+        #region ML-Agents Observations (6-Dimensions)
+
+        /// <summary>
+        /// 1. 정규화된 3D 속도 벡터 (3차원) : CharController.velocity / settings.sprintSpeed
+        /// </summary>
+        public Vector3 NormalizedVelocity
+        {
+            get
+            {
+                if (CharController == null || settings == null || settings.sprintSpeed <= 0f) return Vector3.zero;
+                return CharController.velocity / settings.sprintSpeed;
+            }
+        }
+
+        /// <summary>
+        /// 2. 정규화된 현재 경사도 (1차원) : CurrentSlopeAngle / settings.maxSlopeLimit
+        /// </summary>
+        public float NormalizedSlopeAngle
+        {
+            get
+            {
+                if (settings == null || settings.maxSlopeLimit <= 0f) return 0f;
+                return Mathf.Clamp01(CurrentSlopeAngle / settings.maxSlopeLimit);
+            }
+        }
+
+        /// <summary>
+        /// 3. 지면 접촉 여부 관측치 (1차원) : IsGrounded ? 1.0f : 0.0f
+        /// </summary>
+        public float GroundedObservation => IsGrounded ? 1.0f : 0.0f;
+
+        /// <summary>
+        /// 4. 앉기 자세 여부 관측치 (1차원) : IsCrouching ? 1.0f : 0.0f
+        /// </summary>
+        public float CrouchingObservation => IsCrouching ? 1.0f : 0.0f;
+
+        /// <summary>
+        /// 이동·자세 6차원 관측 데이터를 float 배열로 반환합니다.
+        /// [0~2]: NormalizedVelocity (x, y, z)
+        /// [3]: NormalizedSlopeAngle
+        /// [4]: GroundedObservation
+        /// [5]: CrouchingObservation
+        /// </summary>
+        public float[] GetMovementObservations()
+        {
+            Vector3 vel = NormalizedVelocity;
+            return new float[]
+            {
+                vel.x,
+                vel.y,
+                vel.z,
+                NormalizedSlopeAngle,
+                GroundedObservation,
+                CrouchingObservation
+            };
+        }
+
+        /// <summary>
+        /// ML-Agents VectorSensor 또는 버퍼에 6차원 관측치를 직접 추가합니다.
+        /// </summary>
+        public void CollectMovementObservations(System.Collections.Generic.IList<float> buffer)
+        {
+            if (buffer == null) return;
+            Vector3 vel = NormalizedVelocity;
+            buffer.Add(vel.x);
+            buffer.Add(vel.y);
+            buffer.Add(vel.z);
+            buffer.Add(NormalizedSlopeAngle);
+            buffer.Add(GroundedObservation);
+            buffer.Add(CrouchingObservation);
+        }
+
+        #endregion
 
         private void OnGUI()
         {
             if (!showDebugHUD) return;
 
-            const int width = 380;
-            const int height = 230;
+            const int width = 450;
+            const int height = 290;
             GUI.Box(new Rect(10, 10, width, height), "[이동 HFSM 디버그 HUD - 이용현]");
 
             GUILayout.BeginArea(new Rect(20, 35, width - 20, height - 40));
@@ -310,10 +467,16 @@ namespace Reinforce.Movement
 
             GUILayout.Label($"위치: {transform.position:F2}");
             float hSpeed = new Vector3(CurrentVelocity.x, 0, CurrentVelocity.z).magnitude;
-            GUILayout.Label($"수평 속도: {hSpeed:F2} m/s (설정: {(CurrentInput.IsSprint ? settings.sprintSpeed : settings.walkSpeed)} m/s)");
+            float targetSpeed = IsCrouching ? settings.crouchSpeed : (CurrentInput.IsSprint ? settings.sprintSpeed : settings.walkSpeed);
+            GUILayout.Label($"수평 속도: {hSpeed:F2} m/s (목표: {targetSpeed:F1} m/s)");
+            GUILayout.Label($"자세: {(IsCrouching ? "<color=cyan>앉기 (Crouching, 1.2m)</color>" : "<color=lime>서기 (Standing, 2.0m)</color>")} | 기립 가능: {(CanStandUp() ? "<color=lime>YES</color>" : "<color=red>NO (머리 위 장애물)</color>")}", new GUIStyle(GUI.skin.label) { richText = true, fontStyle = FontStyle.Bold });
             GUILayout.Label($"지면 접촉: {(IsGrounded ? "<color=lime>TRUE (지상)</color>" : (IsTouchingSteepSlope ? "<color=orange>절벽 접촉</color>" : "<color=red>FALSE (공중)</color>"))}", new GUIStyle(GUI.skin.label) { richText = true, fontStyle = FontStyle.Bold });
             GUILayout.Label($"지면 경사도 (Slope): {CurrentSlopeAngle:F1}° / 등반한계: {settings.maxSlopeLimit}°");
-            GUILayout.Label($"이동 입력: ({CurrentInput.MoveVector.x:F1}, {CurrentInput.MoveVector.y:F1}) | 사망 테스트: [K 키]");
+
+            // 6차원 관측 데이터 표시
+            Vector3 nVel = NormalizedVelocity;
+            GUILayout.Label($"ML-Agents 관측치(6D): Vel=({nVel.x:F2}, {nVel.y:F2}, {nVel.z:F2}) | Slp={NormalizedSlopeAngle:F2} | Grd={GroundedObservation:F0} | Crch={CrouchingObservation:F0}", new GUIStyle(GUI.skin.label) { richText = true, fontStyle = FontStyle.Italic });
+            GUILayout.Label($"입력: 이동({CurrentInput.MoveVector.x:F1}, {CurrentInput.MoveVector.y:F1}) | [R]: 리셋 | [K]: 사망");
             GUILayout.EndArea();
         }
 
@@ -335,6 +498,21 @@ namespace Reinforce.Movement
             {
                 Gizmos.color = Color.blue;
                 Gizmos.DrawRay(transform.position, GroundNormal * 1.5f);
+            }
+
+            // 앉은 상태일 때 서기 공간 검사 캡슐 시각화 (기립 가능: 청록, 불가능: 빨강)
+            if (IsCrouching && settings != null)
+            {
+                Vector3 lower = transform.position + Vector3.up * settings.crouchingHeight;
+                Vector3 upper = transform.position + Vector3.up * (settings.standingHeight - radius);
+                if (upper.y < lower.y) upper = lower;
+                Gizmos.color = CanStandUp() ? Color.cyan : Color.red;
+                Gizmos.DrawWireSphere(lower, radius);
+                Gizmos.DrawWireSphere(upper, radius);
+                Gizmos.DrawLine(lower + Vector3.forward * radius, upper + Vector3.forward * radius);
+                Gizmos.DrawLine(lower - Vector3.forward * radius, upper - Vector3.forward * radius);
+                Gizmos.DrawLine(lower + Vector3.right * radius, upper + Vector3.right * radius);
+                Gizmos.DrawLine(lower - Vector3.right * radius, upper - Vector3.right * radius);
             }
         }
     }

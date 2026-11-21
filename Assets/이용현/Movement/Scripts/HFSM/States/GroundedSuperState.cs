@@ -7,6 +7,7 @@ namespace Reinforce.Movement.HFSM
         private IdleState idleState;
         private WalkState walkState;
         private SprintState sprintState;
+        private CrouchState crouchState;
         private SlopeSlideState slopeSlideState;
 
         public GroundedSuperState(PlayerMovementController controller, BaseState parent) : base(controller, parent)
@@ -14,6 +15,7 @@ namespace Reinforce.Movement.HFSM
             idleState = new IdleState(controller, this);
             walkState = new WalkState(controller, this);
             sprintState = new SprintState(controller, this);
+            crouchState = new CrouchState(controller, this);
             slopeSlideState = new SlopeSlideState(controller, this);
         }
 
@@ -42,9 +44,19 @@ namespace Reinforce.Movement.HFSM
                 return;
             }
 
-            // 3. 하위 이동 상태 전이 규칙
+            // 3. 앉기 및 기립 공간 검사 기반 하위 상태 전이 규칙
             MovementInputData input = controller.CurrentInput;
             bool hasMoveInput = input.MoveVector.sqrMagnitude > 0.01f;
+            bool wantCrouch = input.IsCrouch;
+            bool canStand = controller.CanStandUp();
+
+            // 앉기 입력이 유지 중이거나, 머리 위 장애물로 인해 일어설 수 없으면 Crouch 상태 유지
+            if (wantCrouch || !canStand)
+            {
+                if (currentSubState != crouchState)
+                    SetSubState(crouchState);
+                return;
+            }
 
             if (hasMoveInput)
             {
