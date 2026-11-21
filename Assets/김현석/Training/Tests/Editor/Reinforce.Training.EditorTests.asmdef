@@ -1,0 +1,10 @@
+{
+    "name": "Reinforce.Training.EditorTests",
+    "references": [
+        "Reinforce.Decision",
+        "Reinforce.Training",
+        "Unity.ML-Agents"
+    ],
+    "includePlatforms": ["Editor"],
+    "optionalUnityReferences": ["TestAssemblies"]
+}

@@ -1,0 +1,8 @@
+{
+    "name": "Reinforce.Training",
+    "rootNamespace": "Reinforce.Training",
+    "references": [
+        "Reinforce.Decision",
+        "Unity.ML-Agents"
+    ]
+}
