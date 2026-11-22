@@ -1,0 +1,14 @@
+{
+    "name": "Reinforcement.Shooting.EditMode",
+    "references": [
+        "Reinforcement.Shooting",
+        "Reinforcement.Shooting.Demo",
+        "UnityEngine.TestRunner",
+        "UnityEditor.TestRunner"
+    ],
+    "includePlatforms": ["Editor"],
+    "overrideReferences": true,
+    "precompiledReferences": ["nunit.framework.dll"],
+    "autoReferenced": false,
+    "defineConstraints": ["UNITY_INCLUDE_TESTS"]
+}

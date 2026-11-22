@@ -1,0 +1,7 @@
+{
+    "name": "Reinforcement.Shooting.Demo",
+    "references": [
+        "Reinforcement.Shooting",
+        "Unity.InputSystem"
+    ]
+}
