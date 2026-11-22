@@ -111,31 +111,69 @@ namespace ReinProject.Landscape
             return left * right <= 0f ? 0f : 2f * left * right / (left + right);
         }
 
+        internal static bool HasGeometryInChildren(Transform host, bool includeInactive = false)
+        {
+            foreach (var foundation in host.GetComponentsInChildren<TerrainFoundation>(includeInactive))
+                if (foundation.HasGeometry)
+                    return true;
+
+            return false;
+        }
+
         internal static void Apply(Transform host, Vector3[] worldSections, string undoLabel, bool removeNested = false)
         {
-            foreach (var old in host.GetComponentsInChildren<TerrainFoundation>(true))
-                if (old != null && (removeNested || old.transform.parent == host))
-                    Undo.DestroyObjectImmediate(old.gameObject);
+            TerrainFoundation support = null;
+            foreach (var foundation in host.GetComponentsInChildren<TerrainFoundation>(true))
+            {
+                bool directChild = foundation.transform.parent == host;
+                if (directChild && worldSections != null && support == null)
+                {
+                    support = foundation;
+                }
+                else if ((directChild || removeNested) && foundation.HasGeometry)
+                {
+                    // A cover entry can reference this exact collider. Remove its shape, not the component.
+                    Undo.RecordObject(foundation, undoLabel);
+                    foundation.SetSections(null);
+                    PrefabUtility.RecordPrefabInstancePropertyModifications(foundation);
+                }
+            }
             if (worldSections == null)
                 return;
 
-            var footing = new GameObject("Terrain Foundation");
-            if (footing.scene != host.gameObject.scene)
-                UnityEngine.SceneManagement.SceneManager.MoveGameObjectToScene(footing, host.gameObject.scene);
-            footing.transform.SetParent(host, false);
-            footing.layer = host.gameObject.layer;
-            footing.tag = host.gameObject.tag;
-            var foundation = footing.AddComponent<TerrainFoundation>();
+            bool created = support == null;
+            if (created)
+            {
+                var footing = new GameObject("Terrain Foundation");
+                if (footing.scene != host.gameObject.scene)
+                    UnityEngine.SceneManagement.SceneManager.MoveGameObjectToScene(footing, host.gameObject.scene);
+                footing.transform.SetParent(host, false);
+                footing.layer = host.gameObject.layer;
+                footing.tag = host.gameObject.tag;
+                support = footing.AddComponent<TerrainFoundation>();
+            }
+
+            var renderer = support.GetComponent<MeshRenderer>();
+            if (!created)
+                Undo.RecordObjects(new Object[] { support, renderer }, undoLabel);
+
             var localSections = new Vector3[worldSections.Length];
             for (int i = 0; i < worldSections.Length; i++)
-                localSections[i] = footing.transform.InverseTransformPoint(worldSections[i]);
-            var shaderMaterial = AssetDatabase.LoadAssetAtPath<Material>(NeutralMaterial);
-            if (shaderMaterial == null)
-                shaderMaterial = AssetDatabase.LoadAssetAtPath<Material>("Assets/하종욱/Landscape/PublicGeometry/Dry Concrete.mat");
-            footing.GetComponent<MeshRenderer>().sharedMaterial = shaderMaterial;
-            foundation.SetSections(localSections);
-            TerrainFoundationAppearance.Apply(foundation);
-            Undo.RegisterCreatedObjectUndo(footing, undoLabel);
+                localSections[i] = support.transform.InverseTransformPoint(worldSections[i]);
+
+            renderer.sharedMaterial = AssetDatabase.LoadAssetAtPath<Material>(NeutralMaterial);
+            support.SetSections(localSections);
+            TerrainFoundationAppearance.Apply(support);
+
+            if (created)
+            {
+                Undo.RegisterCreatedObjectUndo(support.gameObject, undoLabel);
+            }
+            else
+            {
+                PrefabUtility.RecordPrefabInstancePropertyModifications(support);
+                PrefabUtility.RecordPrefabInstancePropertyModifications(renderer);
+            }
         }
     }
 }

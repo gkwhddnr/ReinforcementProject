@@ -28,7 +28,7 @@ namespace ReinProject.Landscape
 
             Physics.SyncTransforms();
             var terrainsByScene = new Dictionary<Scene, List<TerrainCollider>>();
-            var updates = new List<(Transform Target, Vector3 Position, Vector3[] Foundation)>();
+            var updates = new List<(Transform Target, Vector3 Position, Vector3[] Foundation, SandbagTerrainFit Sandbag)>();
             int skipped = 0;
 
             var targets = new HashSet<Transform>();
@@ -51,15 +51,15 @@ namespace ReinProject.Landscape
                     terrainsByScene.Add(scene, terrains);
                 }
 
-                if (!TryGetPlacementAt(target, terrains, Vector3.zero, false, out Vector3 position, out Vector3[] foundation))
+                if (!TryGetPlacementAt(target, terrains, Vector3.zero, false, out Vector3 position, out Vector3[] foundation, out SandbagTerrainFit sandbag))
                 {
                     skipped++;
                     continue;
                 }
 
-                if ((position - target.position).sqrMagnitude > 0.00000001f || foundation != null ||
-                    target.GetComponentInChildren<TerrainFoundation>() != null)
-                    updates.Add((target, position, foundation));
+                if ((position - target.position).sqrMagnitude > 0.00000001f || foundation != null || sandbag != null ||
+                    TerrainFoundationPlacement.HasGeometryInChildren(target))
+                    updates.Add((target, position, foundation, sandbag));
             }
 
             if (updates.Count > 0)
@@ -72,7 +72,7 @@ namespace ReinProject.Landscape
                 foreach (var update in updates)
                 {
                     Transform target = update.Target;
-                    ApplyPlacement(target, update.Position, update.Foundation, UndoLabel);
+                    ApplyPlacement(target, update.Position, update.Foundation, UndoLabel, update.Sandbag);
                     editedScenes.Add(target.gameObject.scene);
                 }
 
@@ -110,7 +110,8 @@ namespace ReinProject.Landscape
             return target;
         }
 
-        internal static void ApplyPlacement(Transform target, Vector3 position, Vector3[] foundation, string undoLabel)
+        internal static void ApplyPlacement(Transform target, Vector3 position, Vector3[] foundation,
+            string undoLabel, SandbagTerrainFit sandbag)
         {
             Transform frame = GetPlacementFrame(target);
             if (frame == target && SandbagSplineBake.IsBakedArc(target))
@@ -131,6 +132,7 @@ namespace ReinProject.Landscape
             }
 
             target.position = position;
+            sandbag?.Apply(undoLabel);
             TerrainFoundationPlacement.Apply(target, foundation, undoLabel);
             if (PrefabUtility.IsPartOfPrefabInstance(target))
                 PrefabUtility.RecordPrefabInstancePropertyModifications(target);
@@ -149,10 +151,15 @@ namespace ReinProject.Landscape
         }
 
         internal static bool TryGetPlacementAt(Transform target, List<TerrainCollider> terrains,
-            Vector3 horizontalOffset, bool requireFullFootprint, out Vector3 position, out Vector3[] foundation)
+            Vector3 horizontalOffset, bool requireFullFootprint, out Vector3 position, out Vector3[] foundation,
+            out SandbagTerrainFit sandbag)
         {
             position = target.position + horizontalOffset;
             foundation = null;
+            sandbag = null;
+            Transform frame = GetPlacementFrame(target);
+            if (SandbagTerrainFit.HasProfile(frame))
+                return SandbagTerrainFit.TryCreate(frame, terrains, horizontalOffset, out position, out sandbag);
             if (TreeTerrainPlacement.IsTree(target))
                 return TreeTerrainPlacement.TryFit(target, terrains, horizontalOffset, requireFullFootprint, out position);
 

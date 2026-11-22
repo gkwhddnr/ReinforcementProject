@@ -28,7 +28,7 @@ namespace ReinProject.Landscape
             var window = GetWindow<SandbagSplineWindow>("Sandbag Spline");
             window._target = FindBarrier(Selection.activeTransform);
             window._angle = window._target.TryGetComponent(out SandbagSpline spline) ? spline.Angle : DefaultAngle;
-            window._fitTerrain = window._target.GetComponentInChildren<TerrainFoundation>() != null;
+            window._fitTerrain = TerrainFoundationPlacement.HasGeometryInChildren(window._target);
             SceneView.RepaintAll();
         }
 
@@ -37,8 +37,7 @@ namespace ReinProject.Landscape
             for (var current = selected; current != null; current = current.parent)
             {
                 if (!EditorUtility.IsPersistent(current) && current.gameObject.scene.isLoaded &&
-                    (PrefabUtility.GetPrefabAssetPathOfNearestInstanceRoot(current.gameObject) == SandbagSplineBake.PrefabPath ||
-                     SandbagSplineBake.HasPublicSources(current)) &&
+                    PrefabUtility.GetPrefabAssetPathOfNearestInstanceRoot(current.gameObject) == SandbagSplineBake.PrefabPath &&
                     current.GetComponent<BoxCollider>() != null)
                     return current;
             }
@@ -243,3 +242,4 @@ namespace ReinProject.Landscape
         }
     }
 }
+

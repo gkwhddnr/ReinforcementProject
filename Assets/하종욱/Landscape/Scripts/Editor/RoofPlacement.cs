@@ -54,7 +54,7 @@ namespace ReinProject.Landscape
                 if (TryGetClosestPlacement(target, roofs, out Vector3 position))
                 {
                     if ((position - target.position).sqrMagnitude > EdgeTolerance * EdgeTolerance ||
-                        target.GetComponentInChildren<TerrainFoundation>(true) != null)
+                        TerrainFoundationPlacement.HasGeometryInChildren(target, includeInactive: true))
                         updates.Add((target, position));
                 }
                 else

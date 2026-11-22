@@ -1,3 +1,7 @@
+#if UNITY_EDITOR
+using System;
+using UnityEditor;
+#endif
 using UnityEngine;
 
 namespace ReinProject.Landscape
@@ -11,6 +15,13 @@ namespace ReinProject.Landscape
         [SerializeField, HideInInspector] private Vector2 _surfaceUv;
         private Mesh _generatedMesh;
 
+#if UNITY_EDITOR
+        private Vector3[] _builtSections;
+        private Vector2 _builtSurfaceUv;
+#endif
+
+        public bool HasGeometry => _sections != null && _sections.Length >= 8;
+
         public void SetSections(Vector3[] localSections)
         {
             _sections = localSections;
@@ -20,17 +31,37 @@ namespace ReinProject.Landscape
         private void OnEnable()
         {
             Rebuild();
+#if UNITY_EDITOR
+            if (!Application.IsPlaying(gameObject))
+                Undo.undoRedoPerformed += RebuildAfterUndoRedo;
+#endif
         }
 
         private void OnDisable()
         {
+#if UNITY_EDITOR
+            Undo.undoRedoPerformed -= RebuildAfterUndoRedo;
+#endif
             ReleaseMesh();
         }
+
+#if UNITY_EDITOR
+        private void RebuildAfterUndoRedo()
+        {
+            if (!Application.IsPlaying(gameObject) &&
+                (!_builtSections.AsSpan().SequenceEqual(_sections) || !_builtSurfaceUv.Equals(_surfaceUv)))
+                Rebuild();
+        }
+#endif
 
         private void Rebuild()
         {
             ReleaseMesh();
-            if (_sections == null || _sections.Length < 8)
+#if UNITY_EDITOR
+            _builtSections = HasGeometry ? (Vector3[])_sections.Clone() : null;
+            _builtSurfaceUv = _surfaceUv;
+#endif
+            if (!HasGeometry)
                 return;
 
             int rings = _sections.Length / 4;
@@ -62,6 +93,9 @@ namespace ReinProject.Landscape
         public void SetSurfaceUv(Vector2 surfaceUv)
         {
             _surfaceUv = surfaceUv;
+#if UNITY_EDITOR
+            _builtSurfaceUv = surfaceUv;
+#endif
             if (_generatedMesh != null)
                 ApplySurfaceUv();
         }

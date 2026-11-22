@@ -136,6 +136,7 @@ namespace ReinProject.Landscape
                 var offset = new Vector3(point.x - center.x, 0f, point.z - center.z);
                 var positions = new Vector3[pasted.Count];
                 var foundations = new Vector3[pasted.Count][];
+                var sandbagFits = new SandbagTerrainFit[pasted.Count];
 
                 Physics.SyncTransforms();
                 if (onRoof)
@@ -154,7 +155,7 @@ namespace ReinProject.Landscape
                     {
                         Transform item = pasted[i];
                         if (item.GetComponentInChildren<TerrainCollider>(true) != null ||
-                            !TerrainPlacement.TryGetPlacementAt(item, terrains, offset, true, out positions[i], out foundations[i]))
+                            !TerrainPlacement.TryGetPlacementAt(item, terrains, offset, true, out positions[i], out foundations[i], out sandbagFits[i]))
                         {
                             Debug.LogWarning($"{undoLabel}: '{item.name}' cannot fit on the terrain at this location.");
                             return false;
@@ -176,7 +177,7 @@ namespace ReinProject.Landscape
 
                     if (!onRoof)
                     {
-                        TerrainPlacement.ApplyPlacement(item, positions[i], foundations[i], undoLabel);
+                        TerrainPlacement.ApplyPlacement(item, positions[i], foundations[i], undoLabel, sandbagFits[i]);
                         continue;
                     }
 
