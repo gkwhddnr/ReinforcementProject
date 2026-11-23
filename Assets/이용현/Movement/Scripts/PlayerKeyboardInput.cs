@@ -1,4 +1,4 @@
-﻿using UnityEngine;
+using UnityEngine;
 #if ENABLE_INPUT_SYSTEM
 using UnityEngine.InputSystem;
 #endif
@@ -33,6 +33,7 @@ namespace Reinforce.Movement
             Vector2 mousePos = Vector2.zero;
             bool isSprint = false;
             bool isCrouch = false;
+            bool isFire = false;
 
 #if ENABLE_INPUT_SYSTEM
             var keyboard = Keyboard.current;
@@ -56,6 +57,12 @@ namespace Reinforce.Movement
             if (mouse != null)
             {
                 mousePos = mouse.position.ReadValue();
+                isFire = mouse.leftButton.isPressed;
+            }
+
+            if (keyboard != null && keyboard.spaceKey.isPressed)
+            {
+                isFire = true;
             }
 #else
             try
@@ -65,6 +72,7 @@ namespace Reinforce.Movement
                 moveVector = new Vector2(h, v);
                 isSprint = Input.GetKey(KeyCode.LeftShift);
                 isCrouch = Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.C);
+                isFire = Input.GetKey(KeyCode.Space) || Input.GetMouseButton(0);
                 mousePos = Input.mousePosition;
             }
             catch
@@ -111,7 +119,8 @@ namespace Reinforce.Movement
                 MoveVector = moveVector,
                 LookDirection = lookDirection,
                 IsSprint = isSprint,
-                IsCrouch = isCrouch
+                IsCrouch = isCrouch,
+                IsFire = isFire
             };
         }
 

@@ -17,12 +17,13 @@ namespace Reinforce.Movement
         [SerializeField] private Vector2 simulatedMoveVector = new Vector2(0f, 1f);
         [SerializeField] private bool simulatedSprint = false;
         [SerializeField] private bool simulatedCrouch = false;
+        [SerializeField] private bool simulatedFire = false;
 
         private void Update()
         {
             if (simulateAgentActions)
             {
-                SetActionsFromAgent(simulatedMoveVector.x, simulatedMoveVector.y, simulatedSprint, simulatedCrouch, transform.forward);
+                SetActionsFromAgent(simulatedMoveVector.x, simulatedMoveVector.y, simulatedSprint, simulatedCrouch, simulatedFire, transform.forward);
             }
         }
 
@@ -33,16 +34,23 @@ namespace Reinforce.Movement
         /// <param name="moveZ">전후 이동 입력 (-1.0 ~ 1.0)</param>
         /// <param name="sprint">전력 질주 여부</param>
         /// <param name="crouch">앉기 여부</param>
+        /// <param name="fire">발사 유지 여부</param>
         /// <param name="targetLook">목표 시선/조준 월드 방향 벡터</param>
-        public void SetActionsFromAgent(float moveX, float moveZ, bool sprint, bool crouch, Vector3 targetLook)
+        public void SetActionsFromAgent(float moveX, float moveZ, bool sprint, bool crouch, bool fire, Vector3 targetLook)
         {
             currentAgentInput = new MovementInputData
             {
                 MoveVector = Vector2.ClampMagnitude(new Vector2(moveX, moveZ), 1.0f),
                 LookDirection = targetLook.sqrMagnitude > 0.001f ? targetLook.normalized : transform.forward,
                 IsSprint = sprint,
-                IsCrouch = crouch
+                IsCrouch = crouch,
+                IsFire = fire
             };
+        }
+
+        public void SetActionsFromAgent(float moveX, float moveZ, bool sprint, bool crouch, Vector3 targetLook)
+        {
+            SetActionsFromAgent(moveX, moveZ, sprint, crouch, false, targetLook);
         }
 
         /// <summary>
@@ -52,6 +60,7 @@ namespace Reinforce.Movement
         /// continuousActions[2]: targetLook.x (-1 ~ 1)
         /// continuousActions[3]: targetLook.z (-1 ~ 1)
         /// discreteActions[0]: 0=Walk, 1=Sprint, 2=Crouch
+        /// discreteActions[1]: 0=Hold, 1=Fire
         /// </summary>
         public void SetActionsFromArrays(float[] continuousActions, int[] discreteActions)
         {
@@ -70,6 +79,7 @@ namespace Reinforce.Movement
 
             bool sprint = false;
             bool crouch = false;
+            bool fire = false;
 
             if (discreteActions != null && discreteActions.Length > 0)
             {
@@ -78,7 +88,12 @@ namespace Reinforce.Movement
                 else if (posture == 2) crouch = true;
             }
 
-            SetActionsFromAgent(moveX, moveZ, sprint, crouch, lookDir);
+            if (discreteActions != null && discreteActions.Length > 1)
+            {
+                fire = discreteActions[1] == 1;
+            }
+
+            SetActionsFromAgent(moveX, moveZ, sprint, crouch, fire, lookDir);
         }
 
         public MovementInputData GetInput() => currentAgentInput;

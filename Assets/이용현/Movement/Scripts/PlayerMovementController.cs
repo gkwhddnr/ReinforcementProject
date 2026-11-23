@@ -1,4 +1,4 @@
-﻿using UnityEngine;
+using UnityEngine;
 using Reinforce.Movement.HFSM;
 
 namespace Reinforce.Movement
@@ -42,6 +42,15 @@ namespace Reinforce.Movement
         public Vector3 CurrentVelocity => CharController != null ? CharController.velocity : Vector3.zero;
         public bool IsCrouching => settings != null && Mathf.Approximately(CharController.height, settings.crouchingHeight);
         public bool IsDead => currentRootState is DeadState;
+
+        // 조원별 전달 요청서 규격 프로퍼티 (김현석 / 이승재 연동용)
+        public Vector3 Position => transform.position;
+        public Quaternion Rotation => transform.rotation;
+        public Vector3 Velocity => CurrentVelocity;
+        public float MaximumSpeed => settings != null ? settings.sprintSpeed : 6.5f;
+        public PostureState Posture => IsCrouching ? PostureState.Crouching : PostureState.Standing;
+        public bool IsReady => CharController != null && settings != null;
+        public event System.Action<PostureState> OnPostureChanged;
 
         // 후순위 확장용 외부 속도 배율 (기본값 1.0f)
         public float ExternalSpeedMultiplier { get; set; } = 1.0f;
@@ -92,6 +101,7 @@ namespace Reinforce.Movement
 
 #if UNITY_EDITOR
             EnsureCrouchObstacleExists();
+            EnsureCombatManagerExists();
 #endif
         }
 
@@ -103,6 +113,19 @@ namespace Reinforce.Movement
                 GameObject tunnel = new GameObject("CrouchTestObstacle_Tunnel");
                 tunnel.transform.position = new Vector3(0f, 0f, -5f);
                 tunnel.AddComponent<CrouchTestObstacle>();
+            }
+        }
+
+        private void EnsureCombatManagerExists()
+        {
+            var activeScene = UnityEngine.SceneManagement.SceneManager.GetActiveScene();
+            if (activeScene.name != null && activeScene.name.Contains("Combat"))
+            {
+                if (FindFirstObjectByType<Reinforce.Integration.CombatIntegrationManager>() == null)
+                {
+                    GameObject mgr = new GameObject("CombatIntegrationManager");
+                    mgr.AddComponent<Reinforce.Integration.CombatIntegrationManager>();
+                }
             }
         }
 #endif
@@ -181,6 +204,21 @@ namespace Reinforce.Movement
                 float visorY = isCrouch ? 0.9f : 1.5f;
                 visor.localPosition = new Vector3(0f, visorY, 0.4f);
             }
+
+            // 사격 모듈 연동용 Eye 및 Mount 오프셋 동기화
+            Transform eye = transform.Find("Eye");
+            if (eye != null)
+            {
+                eye.localPosition = new Vector3(0f, targetHeight - 0.18f, 0f);
+            }
+
+            Transform mount = transform.Find("Mount");
+            if (mount != null)
+            {
+                mount.localPosition = new Vector3(0f, targetHeight * 0.62f, 0f);
+            }
+
+            OnPostureChanged?.Invoke(Posture);
         }
 
         /// <summary>
