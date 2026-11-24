@@ -7,6 +7,14 @@ namespace Reinforcement.Shooting
 {
     public enum ContactKind { None, Obstacle, Actor }
 
+    public enum ShotObstacleResponse { Default, Ignore, Block }
+
+    // Scene modules can classify their colliders without replacing the legacy ShotObstacle component.
+    public interface IShotObstacleResolver
+    {
+        ShotObstacleResponse Classify(Collider collider, out string obstacleId);
+    }
+
     public struct ShotContact
     {
         public ContactKind Kind;
@@ -152,17 +160,32 @@ namespace Reinforcement.Shooting
 
         private static ShotContact MakeContact(Collider shape, ShotActor actor, Vector3 point, float distance)
         {
-            var obstacle = actor ? null : shape.GetComponentInParent<ShotObstacle>();
+            string obstacleId = null;
+            if (!actor)
+            {
+                var obstacle = shape.GetComponentInParent<ShotObstacle>();
+                if (obstacle)
+                {
+                    obstacleId = obstacle.ObstacleId;
+                }
+                else if (shape.GetComponentInParent<IShotObstacleResolver>() is { } resolver)
+                {
+                    if (resolver.Classify(shape, out obstacleId) == ShotObstacleResponse.Ignore)
+                        return default;
+                }
+            }
+
             return new ShotContact
             {
                 Kind = actor ? ContactKind.Actor : ContactKind.Obstacle, Actor = actor, Collider = shape,
-                Point = point, Distance = distance, ObstacleId = obstacle ? obstacle.ObstacleId : null
+                Point = point, Distance = distance, ObstacleId = obstacleId
             };
         }
 
         // Co-located surfaces favour cover. Registered cover and actors have stable IDs.
         private static bool Prefer(ShotContact candidate, ShotContact nearest)
         {
+            if (candidate.Kind == ContactKind.None) return false;
             if (nearest.Kind == ContactKind.None || candidate.Distance < nearest.Distance) return true;
             if (candidate.Distance > nearest.Distance) return false;
             if (candidate.Kind != nearest.Kind) return candidate.Kind == ContactKind.Obstacle;
