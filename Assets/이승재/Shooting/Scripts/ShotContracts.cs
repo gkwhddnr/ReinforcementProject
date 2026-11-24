@@ -11,16 +11,23 @@ namespace Reinforcement.Shooting
         [Min(0.01f)] public float range = 20f;
         [Min(0f)] public float interval = 0.2f;
         [Min(0f)] public float damage = 20f;
+        [Tooltip("Use -1 to apply the body damage to head hits.")] public float headDamage = -1f;
         [Range(0f, 1f)] public float accuracy = 0.7f;
+        [Tooltip("Fraction of accurate shots that try to aim at the head.")]
+        [Range(0f, 1f)] public float headAimChance;
         public LayerMask mask = Physics.DefaultRaycastLayers;
         [Min(0f)] public float tracerSeconds = 0.05f;
 
         public bool IsHitRoll(double roll) => roll < accuracy;
 
+        internal float DamageFor(HitRegion region) => region == HitRegion.Head && headDamage >= 0f ? headDamage : damage;
+
         internal bool Valid => range > 0f && !float.IsInfinity(range)
             && interval >= 0f && !float.IsInfinity(interval)
             && damage >= 0f && !float.IsInfinity(damage)
-            && accuracy >= 0f && accuracy <= 1f && mask.value != 0;
+            && (headDamage == -1f || (headDamage >= 0f && !float.IsInfinity(headDamage)))
+            && accuracy >= 0f && accuracy <= 1f
+            && headAimChance >= 0f && headAimChance <= 1f && mask.value != 0;
     }
 
     // The provider owns the candidate list until Tick returns. The observed aim points

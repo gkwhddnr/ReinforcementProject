@@ -2,8 +2,25 @@
 %TAG !u! tag:unity3d.com,2011:
 --- !u!78 &1
 TagManager:
-  serializedVersion: 2
-  tags: []
+  serializedVersion: 3
+  tags:
+  - ArenaWall
+  - ArenaTree
+  - ArenaRock
+  - ArenaBuilding
+  - ArenaCenter
+  - ArenaBox
+  - ArenaSandbag
+  - ArenaTerrain
+  - ArenaLadder
+  - ArenaBoundary
+  - ArenaSpawn
+  - ArenaRoute
+  - ArenaChunk
+  - ArenaPlayer
+  - ArenaEnemy
+  - ArenaLight
+  - ArenaHelper
   layers:
   - Default
   - TransparentFX
@@ -13,8 +30,8 @@ TagManager:
   - UI
   - 
   - 
-  - 
-  - 
+  - ArenaCover
+  - ArenaGround
   - 
   - 
   - 
@@ -50,27 +67,3 @@ TagManager:
   - Light Layer 5
   - Light Layer 6
   - Light Layer 7
-  - 
-  - 
-  - 
-  - 
-  - 
-  - 
-  - 
-  - 
-  - 
-  - 
-  - 
-  - 
-  - 
-  - 
-  - 
-  - 
-  - 
-  - 
-  - 
-  - 
-  - 
-  - 
-  - 
-  - 

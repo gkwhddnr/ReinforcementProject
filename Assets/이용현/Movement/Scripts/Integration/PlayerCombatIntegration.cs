@@ -34,6 +34,8 @@ namespace Reinforce.Integration
 
         [Header("Debug HUD")]
         [SerializeField] private bool showCombatHUD = true;
+        [SerializeField] private bool enableDemoReset = true;
+        [SerializeField] private bool stationaryAimOnly;
 
         private PlayerMovementController movementController;
         private PlayerShotActor shotActor;
@@ -92,7 +94,10 @@ namespace Reinforce.Integration
         private void Start()
         {
             InitializeRig();
-            ResetCombatEpisode(episodeId, rngSeed);
+            if (stationaryAimOnly)
+                weapon.ResetEpisode(episodeId, rngSeed);
+            else
+                ResetCombatEpisode(episodeId, rngSeed);
         }
 
         private void EnsureRigTransforms()
@@ -193,6 +198,12 @@ namespace Reinforce.Integration
             }
         }
 
+        public void SetSpawnPose(Pose spawn)
+        {
+            initialSpawnPos = spawn.position;
+            initialSpawnRot = spawn.rotation;
+        }
+
         public void ResetCombatEpisode(int newEpisodeId, int seed)
         {
             episodeId = newEpisodeId;
@@ -215,7 +226,7 @@ namespace Reinforce.Integration
             }
 
             // R 키 입력 시 통합 리셋 수행
-            if (Input.GetKeyDown(KeyCode.R))
+            if (!stationaryAimOnly && enableDemoReset && Input.GetKeyDown(KeyCode.R))
             {
                 ResetCombatEpisode(episodeId + 1, rngSeed + 1);
             }
@@ -226,12 +237,23 @@ namespace Reinforce.Integration
             if (!shotActor.Alive || movementController.IsDead) return;
 
             // 1. 발사 입력 주입 (키보드 또는 ML-Agents 브릿지의 IsFire 전달)
-            bool fireCommand = movementController.CurrentInput.IsFire;
+            bool fireCommand = !stationaryAimOnly && movementController.CurrentInput.IsFire;
             weapon.SetCommand(episodeId, fireCommand);
 
             // 2. 물리 동기화 및 시야 샘플링
             Physics.SyncTransforms();
             VisibilityFrame frame = vision.Sample(episodeId, tickCount, shootingSettings.mask);
+            if (stationaryAimOnly && weapon.Target)
+            {
+                foreach (ShotActor visible in frame.Candidates)
+                {
+                    if (visible != weapon.Target)
+                        continue;
+
+                    movementController.RotateTowards(visible.AimPoint - transform.position);
+                    break;
+                }
+            }
 
             // 3. 무기 틱 처리 (오토에임 조준 정렬, 쿨다운 검사, 발사 및 데미지 전달)
             weapon.Tick(episodeId, tickCount, elapsedSimTime, frame);

@@ -135,7 +135,8 @@ namespace Reinforcement.Shooting
                 Status = ShotStatus.OverlappingActor;
                 return;
             }
-            bool aimed = settings.IsHitRoll(random.NextDouble());
+            double hitRoll = random.NextDouble();
+            bool aimed = settings.IsHitRoll(hitRoll);
             if (!aimed && !ShotPhysics.ClearMissDirection(Target, origin, aimPoint, settings.range,
                 settings.mask, random, out direction))
             {
@@ -143,8 +144,20 @@ namespace Reinforcement.Shooting
                 Status = ShotStatus.MissDirectionUnavailable;
                 return;
             }
+            if (!blocked && aimed && hitRoll < settings.accuracy * settings.headAimChance)
+            {
+                Vector3 headDirection = (Target.HeadAimPoint - origin).normalized;
+                var headContact = ShotPhysics.Trace(owner, origin, headDirection, settings.range, settings.mask);
+                if (headContact.Actor == Target && Target.RegionAt(headContact.Point) == HitRegion.Head)
+                {
+                    direction = headDirection;
+                    contact = headContact;
+                }
+            }
+
             AlignMuzzle(direction);
-            if (!blocked) contact = ShotPhysics.Trace(owner, origin, muzzle.forward, settings.range, settings.mask);
+            if (!blocked && contact.Kind == ContactKind.None)
+                contact = ShotPhysics.Trace(owner, origin, muzzle.forward, settings.range, settings.mask);
 
             var firingEpisodeRng = random;
             var shot = new ShotResult
@@ -168,7 +181,8 @@ namespace Reinforcement.Shooting
                     {
                         EpisodeId = shot.EpisodeId, Sequence = shot.Sequence, Time = time,
                         ShooterId = shot.ShooterId, TeamId = shot.TeamId, TargetId = hit.ActorId,
-                        Region = shot.Region, Point = contact.Point, Amount = settings.damage
+                        Region = shot.Region, Point = contact.Point,
+                        Amount = settings.DamageFor(shot.Region)
                     });
                 }
             }

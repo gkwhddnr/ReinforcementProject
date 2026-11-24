@@ -18,6 +18,7 @@ namespace Reinforce.Movement
 
         [Header("Debug HUD")]
         [SerializeField] private bool showDebugHUD = true;
+        [SerializeField] private bool enableDemoControls = true;
 
         // 컴포넌트 & 인터페이스
         public MovementSettingsSO Settings => settings;
@@ -40,7 +41,7 @@ namespace Reinforce.Movement
         public Vector3 GroundNormal { get; private set; } = Vector3.up;
         public float CurrentSlopeAngle { get; private set; } = 0f;
         public Vector3 CurrentVelocity => CharController != null ? CharController.velocity : Vector3.zero;
-        public bool IsCrouching => settings != null && Mathf.Approximately(CharController.height, settings.crouchingHeight);
+        public bool IsCrouching => CharController != null && settings != null && Mathf.Approximately(CharController.height, settings.crouchingHeight);
         public bool IsDead => currentRootState is DeadState;
 
         // 조원별 전달 요청서 규격 프로퍼티 (김현석 / 이승재 연동용)
@@ -100,8 +101,11 @@ namespace Reinforce.Movement
             currentRootState.Enter();
 
 #if UNITY_EDITOR
-            EnsureCrouchObstacleExists();
-            EnsureCombatManagerExists();
+            if (enableDemoControls)
+            {
+                EnsureCrouchObstacleExists();
+                EnsureCombatManagerExists();
+            }
 #endif
         }
 
@@ -137,6 +141,9 @@ namespace Reinforce.Movement
             CurrentInput = inputProvider.GetInput();
             RotateTowards(CurrentInput.LookDirection);
             currentRootState.Update();
+
+            if (!enableDemoControls)
+                return;
 
             if (Input.GetKeyDown(KeyCode.K))
             {
