@@ -1,16 +1,13 @@
 using System.Collections.Generic;
 using NUnit.Framework;
 using Reinforcement.Shooting.Demo;
-using UnityEditor.SceneManagement;
 using UnityEngine;
-using UnityEngine.SceneManagement;
 
 namespace Reinforcement.Shooting.Tests
 {
     public sealed class ShootingMvpTests
     {
         private const int Episode = 17, Seed = 20261120, Layer = 30, Mask = 1 << Layer;
-        private Scene previous, scene;
         private Transform root, eye, mount, muzzle;
         private RecordingShotActor owner, target;
         private ShootingSettings settings;
@@ -21,11 +18,8 @@ namespace Reinforcement.Shooting.Tests
         [SetUp]
         public void SetUp()
         {
-            previous = SceneManager.GetActiveScene();
-            scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Additive);
             try
             {
-                SceneManager.SetActiveScene(scene);
                 root = new GameObject("Shooting test fixture").transform;
                 root.position = new Vector3(1024f, 512f, -512f);
                 owner = Actor(1, 1, Vector3.zero);
@@ -54,8 +48,7 @@ namespace Reinforcement.Shooting.Tests
         public void TearDown()
         {
             if (weapon) weapon.ShotResolved -= shots.Add;
-            if (previous.IsValid() && previous.isLoaded) SceneManager.SetActiveScene(previous);
-            if (scene.IsValid() && scene.isLoaded) EditorSceneManager.CloseScene(scene, true);
+            if (root) UnityEngine.Object.DestroyImmediate(root.gameObject);
             shots.Clear();
         }
 
@@ -96,6 +89,109 @@ namespace Reinforcement.Shooting.Tests
 
         private static void SamePoint(Vector3 a, Vector3 b) =>
             Assert.That(Vector3.Distance(a, b), Is.LessThan(0.001f));
+
+        [Test]
+        public void TeamStateReportsTheObservedPointAndTheVisionProvidersDistance()
+        {
+            Assert.That(weapon.GetState().IsReady, Is.False);
+            Assert.That(weapon.GetState().TargetUpdateTick, Is.EqualTo(-1));
+            vision.chunkSize = 28f;
+            weapon.Tick(Episode, 4, 1, vision.Sample(Episode, 4, Mask));
+            var seen = weapon.GetState();
+            Assert.That(seen.IsReady && seen.HasTarget && seen.CanFire, Is.True);
+            Assert.That(seen.TargetId, Is.EqualTo(target.ActorId));
+            Assert.That(seen.TargetUpdateTick, Is.EqualTo(4));
+            Assert.That(seen.MaxDetectionDistance, Is.EqualTo(56f));
+            Assert.That(seen.EffectiveRange, Is.EqualTo(settings.range));
+            SamePoint(seen.Origin, muzzle.position);
+            SamePoint(seen.AimPoint, target.AimPoint);
+            SamePoint(muzzle.forward, (seen.AimPoint - seen.Origin).normalized);
+
+            target.transform.localPosition = Vector3.back * 8f;
+            Physics.SyncTransforms();
+            SamePoint(weapon.GetState().AimPoint, seen.AimPoint);
+            weapon.Tick(Episode, 5, 2, vision.Sample(Episode, 5, Mask));
+            var lost = weapon.GetState();
+            Assert.That(lost.IsReady, Is.True);
+            Assert.That(lost.HasTarget || lost.CanFire, Is.False);
+            Assert.That(lost.TargetId, Is.EqualTo(-1));
+            SamePoint(lost.AimPoint, Vector3.zero);
+            Assert.That(lost.TargetUpdateTick, Is.EqualTo(5));
+            weapon.Tick(Episode, 6, 3, vision.Sample(Episode, 5, Mask));
+            Assert.That(weapon.GetState().IsReady, Is.False);
+            Assert.That(weapon.GetState().TargetUpdateTick, Is.EqualTo(6));
+            target.transform.localPosition = Vector3.forward * 8f;
+            Physics.SyncTransforms();
+            weapon.Tick(Episode, 7, 4, new VisibilityFrame(Episode, 7, new[] { target }, 5f));
+            Assert.That(weapon.GetState().MaxDetectionDistance, Is.EqualTo(5f));
+            Assert.That(weapon.GetState().HasTarget, Is.False);
+        }
+
+        [Test]
+        public void HeldCommandsPublishOnlyCommittedShotsAndActualActorContacts()
+        {
+            var fires = new List<ShotFiredEvent>();
+            var hits = new List<ShotHitEvent>();
+            weapon.ShotFired += fires.Add;
+            weapon.ShotHit += hits.Add;
+            weapon.SetCommand(true);
+            Tick(0, 0);
+            weapon.SetCommand(true);
+            Tick(1, 0.01, target);
+            weapon.SetCommand(true);
+            Tick(2, 0.02, target);
+            Assert.That(weapon.GetState().CanFire, Is.False);
+            Assert.That(fires.Count, Is.EqualTo(1));
+            Assert.That(hits.Count, Is.EqualTo(1));
+            Assert.That(hits[0].Shot.ShotId, Is.EqualTo(fires[0].ShotId));
+            Assert.That(target.LastRequest.ShotId, Is.EqualTo(fires[0].ShotId));
+
+            Box(root, new Vector3(0f, 1f, 4f), new Vector3(3f, 3f, 0.2f));
+            Physics.SyncTransforms();
+            Tick(3, 1, target); // A supplied target with an obstructed muzzle line.
+            Assert.That(fires.Count, Is.EqualTo(2));
+            Assert.That(fires[1].ShotId, Is.Not.EqualTo(fires[0].ShotId));
+            Assert.That(hits.Count, Is.EqualTo(1));
+            weapon.SetCommand(false);
+            Tick(4, 2, target);
+            Assert.That(fires.Count, Is.EqualTo(2));
+        }
+
+        [Test]
+        public void HitKeepsFiringIdentityWhenAFireListenerStartsTheNextRound()
+        {
+            const int oldRound = 42, newRound = 43;
+            var blocker = Actor(3, target.TeamId, new Vector3(0.35f, 0f, 4f));
+            Physics.SyncTransforms();
+            var order = new List<string>();
+            ShotFiredEvent fired = default;
+            ShotHitEvent hit = default;
+            weapon.ShotFired += value =>
+            {
+                order.Add("fired");
+                fired = value;
+                weapon.ResetEpisode(newRound);
+            };
+            weapon.ShotHit += value => { order.Add("hit"); hit = value; };
+            weapon.ResetEpisode(oldRound);
+            weapon.SetCommand(true);
+            weapon.Tick(oldRound, 0, 7.25, new VisibilityFrame(oldRound, 0, new[] { target }));
+            CollectionAssert.AreEqual(new[] { "fired", "hit" }, order);
+            Assert.That(fired.SelectedTargetId, Is.EqualTo(target.ActorId));
+            Assert.That(hit.Shot.ShotId, Is.EqualTo(fired.ShotId));
+            Assert.That(hit.Shot.EpisodeId, Is.EqualTo(oldRound));
+            Assert.That(hit.Shot.ShooterId, Is.EqualTo(owner.ActorId));
+            Assert.That(hit.Shot.FiredAt, Is.EqualTo(7.25));
+            Assert.That(hit.HitAt, Is.EqualTo(7.25));
+            Assert.That(hit.HitTargetId, Is.EqualTo(blocker.ActorId));
+            Assert.That(hit.Region, Is.EqualTo(HitRegion.Body));
+            Assert.That(weapon.LastShot.ShotId, Is.Zero);
+            Assert.That(weapon.GetState().TargetId, Is.EqualTo(-1));
+            weapon.SetCommand(oldRound, true);
+            weapon.Tick(newRound, 0, 0, new VisibilityFrame(newRound, 0, new[] { target }));
+            Assert.That(weapon.GetState().CanFire, Is.True);
+            Assert.That(order.Count, Is.EqualTo(2));
+        }
 
         [Test]
         public void AutoAimNeedsCommandAndAppliesOnlyTheFirstDamageReceipt()

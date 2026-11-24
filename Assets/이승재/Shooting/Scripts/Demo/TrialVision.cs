@@ -7,8 +7,9 @@ namespace Reinforcement.Shooting.Demo
     // Trial sight provider. Only the explicitly assigned rivals can enter a frame.
     public sealed class TrialVision : MonoBehaviour
     {
-        [Min(0)] public float chunkSize = 50f;
+        [Min(0)] public float chunkSize = VisibilityFrame.TrialChunkSize;
         [Range(0, 360)] public float horizontalFov = 90f;
+        public float MaxDetectionDistance => 2f * chunkSize;
 
         private ShotActor observer;
         private Transform eye;
@@ -35,7 +36,7 @@ namespace Reinforcement.Shooting.Demo
 
                     Vector3 offset = rival.AimPoint - eye.position;
                     Vector3 horizontal = Vector3.ProjectOnPlane(offset, Vector3.up);
-                    if (horizontal.magnitude > 2f * chunkSize ||
+                    if (horizontal.magnitude > MaxDetectionDistance ||
                         Vector3.Angle(forward, horizontal) > horizontalFov * 0.5f)
                         continue;
 
@@ -50,7 +51,7 @@ namespace Reinforcement.Shooting.Demo
             }
             // Earlier frames keep their own list when a later tick changes visibility.
             IReadOnlyList<ShotActor> snapshot = visible;
-            return new VisibilityFrame(episodeId, tick, snapshot ?? Array.Empty<ShotActor>());
+            return new VisibilityFrame(episodeId, tick, snapshot ?? Array.Empty<ShotActor>(), MaxDetectionDistance);
         }
     }
 }

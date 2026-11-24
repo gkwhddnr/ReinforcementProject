@@ -27,16 +27,24 @@ namespace Reinforcement.Shooting
     // belong to this frame, so moving a target cannot reveal a new aim point through an old frame.
     public readonly struct VisibilityFrame
     {
+        public const float TrialChunkSize = 50f;
+        public const float TrialDetectionDistance = 2f * TrialChunkSize;
         public readonly int EpisodeId;
         public readonly int Tick;
+        public readonly float MaxDetectionDistance;
         public readonly IReadOnlyList<ShotActor> Candidates;
         private readonly Vector3 firstPoint;
         private readonly Vector3[] otherPoints;
 
         public VisibilityFrame(int episodeId, int tick, IReadOnlyList<ShotActor> candidates)
+            : this(episodeId, tick, candidates, TrialDetectionDistance) { }
+
+        public VisibilityFrame(int episodeId, int tick, IReadOnlyList<ShotActor> candidates,
+            float maxDetectionDistance)
         {
             EpisodeId = episodeId;
             Tick = tick;
+            MaxDetectionDistance = maxDetectionDistance;
             Candidates = candidates;
             int count = candidates?.Count ?? 0;
             firstPoint = count > 0 && candidates[0] ? candidates[0].AimPoint : default;
@@ -50,6 +58,7 @@ namespace Reinforcement.Shooting
 
     public struct DamageRequest
     {
+        public long ShotId;
         public int EpisodeId, Sequence, ShooterId, TeamId, TargetId;
         public double Time;
         public Vector3 Point;
@@ -78,6 +87,7 @@ namespace Reinforcement.Shooting
     // Evaluation event. Policy observations and rewards are owned by the learning system.
     public struct ShotResult
     {
+        public long ShotId;
         public int EpisodeId, Seed, ShooterId, TeamId, Sequence, TargetId;
         public double Time;
         public Vector3 Origin, Direction;
@@ -86,6 +96,58 @@ namespace Reinforcement.Shooting
         public int? HitActorId;
         public HitRegion Region;
         public DamageReceipt Damage;
+
+        // One resolved hitscan has at most one actor contact. This conversion uses only
+        // the shot's captured values, even if the firing callback starts another episode.
+        internal void Notify(Action<ShotFiredEvent> onFired, Action<ShotHitEvent> onHit)
+        {
+            var fired = new ShotFiredEvent(this);
+            ShotHitEvent? hit = HitActorId.HasValue
+                ? new ShotHitEvent(fired, HitActorId.Value, Time, Region) : (ShotHitEvent?)null;
+            onFired?.Invoke(fired);
+            if (hit.HasValue) onHit?.Invoke(hit.Value);
+        }
+    }
+
+    // A copy of one observation. None of the fields can track a target's Transform.
+    public struct ShootingState
+    {
+        public bool HasTarget, CanFire, IsReady;
+        public int TargetId, TargetUpdateTick;
+        public Vector3 AimPoint, Origin;
+        public float MaxDetectionDistance, EffectiveRange;
+    }
+
+    public readonly struct ShotFiredEvent
+    {
+        public readonly int EpisodeId, ShooterId, SelectedTargetId;
+        public readonly long ShotId;
+        public readonly double FiredAt;
+
+        internal ShotFiredEvent(ShotResult shot)
+        {
+            EpisodeId = shot.EpisodeId;
+            ShooterId = shot.ShooterId;
+            SelectedTargetId = shot.TargetId;
+            ShotId = shot.ShotId;
+            FiredAt = shot.Time;
+        }
+    }
+
+    public readonly struct ShotHitEvent
+    {
+        public readonly ShotFiredEvent Shot;
+        public readonly int HitTargetId;
+        public readonly double HitAt;
+        public readonly HitRegion Region;
+
+        internal ShotHitEvent(ShotFiredEvent shot, int hitTargetId, double hitAt, HitRegion region)
+        {
+            Shot = shot;
+            HitTargetId = hitTargetId;
+            HitAt = hitAt;
+            Region = region;
+        }
     }
 
     public struct ShotLineQuery
