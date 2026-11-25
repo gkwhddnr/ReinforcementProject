@@ -103,6 +103,13 @@ namespace ReinProject.Landscape
                 return false;
             }
 
+            // 기존 사다리 테스트용 레거시 Player 오브젝트가 활성화되어 있으면 비활성화 (충돌 및 중복 방지)
+            var legacyPlayer = GameObject.Find("Outdoor Arena/Spawn A/Player") ?? GameObject.Find("Spawn A/Player");
+            if (legacyPlayer != null && legacyPlayer.activeSelf)
+            {
+                legacyPlayer.SetActive(false);
+            }
+
             // 인스턴스가 없으면 새로 생성, 있으면 위치 리셋
             if (_instanceA == null)
             {
