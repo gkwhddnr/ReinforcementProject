@@ -18,7 +18,34 @@ namespace Reinforcement.Shooting
         public LayerMask mask = Physics.DefaultRaycastLayers;
         [Min(0f)] public float tracerSeconds = 0.05f;
 
+        [Header("Dynamic Human Accuracy")]
+        [Tooltip("인간 유사 동적 명중률 시스템 활성화 여부 (반응 지연 및 조준 유지 시간에 따른 명중률 곡선 적용)")]
+        public bool useDynamicAccuracy = true;
+        [Tooltip("적 식별 후 최초 사격까지의 반응 지연 시간 (초 단위, 0.2~0.25초)")]
+        [Range(0.1f, 0.5f)] public float reactionDelay = 0.22f;
+        [Tooltip("반응 지연 직후 기본 명중률 (0.25 = 25%)")]
+        [Range(0f, 1f)] public float baseAccuracy = 0.25f;
+        [Tooltip("조준 지속 시 최대 수렴 명중률 (0.80 = 80%)")]
+        [Range(0f, 1f)] public float maxAccuracy = 0.80f;
+        [Tooltip("조준 집중 수렴 속도 (클수록 초반 상승폭이 큼)")]
+        [Min(0.1f)] public float aimConvergence = 3.8f;
+
+        public float CalculateDynamicAccuracy(double lockDuration)
+        {
+            if (lockDuration < reactionDelay) return 0f;
+            float dt = (float)(lockDuration - reactionDelay);
+            // 위로 볼록한 지수 포화 곡선: base + (max - base) * (1 - e^(-k * dt))
+            return Mathf.Clamp01(baseAccuracy + (maxAccuracy - baseAccuracy) * (1f - Mathf.Exp(-aimConvergence * dt)));
+        }
+
         public bool IsHitRoll(double roll) => roll < accuracy;
+
+        public bool IsHitRoll(double roll, double lockDuration)
+        {
+            if (!useDynamicAccuracy) return roll < accuracy;
+            if (lockDuration < reactionDelay) return false;
+            return roll < CalculateDynamicAccuracy(lockDuration);
+        }
 
         internal float DamageFor(HitRegion region) => region == HitRegion.Head && headDamage >= 0f ? headDamage : damage;
 
@@ -27,7 +54,8 @@ namespace Reinforcement.Shooting
             && damage >= 0f && !float.IsInfinity(damage)
             && (headDamage == -1f || (headDamage >= 0f && !float.IsInfinity(headDamage)))
             && accuracy >= 0f && accuracy <= 1f
-            && headAimChance >= 0f && headAimChance <= 1f && mask.value != 0;
+            && headAimChance >= 0f && headAimChance <= 1f && mask.value != 0
+            && (!useDynamicAccuracy || (reactionDelay >= 0f && baseAccuracy >= 0f && maxAccuracy >= baseAccuracy && aimConvergence > 0f));
     }
 
     // The provider owns the candidate list until Tick returns. The observed aim points

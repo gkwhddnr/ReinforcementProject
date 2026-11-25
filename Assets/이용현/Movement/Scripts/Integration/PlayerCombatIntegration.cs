@@ -74,7 +74,10 @@ namespace Reinforce.Integration
         public Transform MuzzleTransform => muzzle;
         public float EffectiveRange => shootingSettings != null ? shootingSettings.range : 20f;
         public float CooldownRemaining => weapon != null ? (float)weapon.RemainingCooldown(elapsedSimTime) : 0f;
+        public float CurrentAccuracy => weapon != null ? weapon.CurrentAccuracy(elapsedSimTime) : (shootingSettings != null ? shootingSettings.accuracy : 0f);
+        public float TargetLockDuration => weapon != null ? (float)weapon.TargetLockDuration(elapsedSimTime) : 0f;
         public float NormalizedHealth => shotActor != null ? shotActor.Health / shotActor.MaxHealth : 0f;
+        public ShootingSettings ShootingSettings => shootingSettings;
 
         #endregion
 
@@ -225,6 +228,12 @@ namespace Reinforce.Integration
                 lineRenderer.enabled = false;
             }
 
+            // T 키 입력 시 동적 명중률 시스템 실시간 토글
+            if (Input.GetKeyDown(KeyCode.T) && shootingSettings != null)
+            {
+                shootingSettings.useDynamicAccuracy = !shootingSettings.useDynamicAccuracy;
+            }
+
             // R 키 입력 시 통합 리셋 수행
             if (!stationaryAimOnly && enableDemoReset && Input.GetKeyDown(KeyCode.R))
             {
@@ -267,7 +276,8 @@ namespace Reinforce.Integration
             string hitDesc = shot.Contact.Kind == ContactKind.Obstacle ? $"Obstacle ({shot.Contact.ObstacleId})" :
                 shot.Contact.Kind == ContactKind.Actor ? $"{shot.Region} (Damage: {shot.Damage.Applied:0})" : "Miss";
 
-            lastShotLog = $"[Shot #{shot.Sequence}] -> {hitDesc} | Target: #{shot.TargetId}";
+            float accPercent = CurrentAccuracy * 100f;
+            lastShotLog = $"[Shot #{shot.Sequence}] -> {hitDesc} | 당시 명중률: {accPercent:F1}% | Target: #{shot.TargetId}";
 
             if (showTracers && lineRenderer != null && shootingSettings.tracerSeconds > 0f)
             {
@@ -282,8 +292,8 @@ namespace Reinforce.Integration
         {
             if (!showCombatHUD) return;
 
-            int width = 450;
-            int height = 150;
+            int width = 480;
+            int height = 210;
             int x = Screen.width - width - 10;
             int y = 10;
 
@@ -293,11 +303,30 @@ namespace Reinforce.Integration
             string hpColor = shotActor.Health > 50f ? "lime" : (shotActor.Health > 20f ? "yellow" : "red");
             GUILayout.Label($"체력 (HP): <color={hpColor}><b>{shotActor.Health:F0} / {shotActor.MaxHealth:F0}</b></color> (생존: {shotActor.Alive})", new GUIStyle(GUI.skin.label) { richText = true });
 
-            string targetInfo = HasTarget ? $"<color=cyan>Target #{TargetId}</color>" : "<color=gray>No Target (Searching FOV 90°)</color>";
+            string targetInfo = HasTarget ? $"<color=cyan>Target #{TargetId}</color>" : "<color=gray>No Target (Searching FOV)</color>";
             GUILayout.Label($"오토에임 표적: {targetInfo} | 발사상태: {weapon.Status}", new GUIStyle(GUI.skin.label) { richText = true });
+
+            // [동적 명중률 실시간 정보 표시]
+            if (shootingSettings != null && shootingSettings.useDynamicAccuracy)
+            {
+                float lockTime = TargetLockDuration;
+                float currentAcc = CurrentAccuracy * 100f;
+                string lockStatus = lockTime < shootingSettings.reactionDelay
+                    ? $"<color=red><b>식별 지연 중 ({lockTime:F2}s / {shootingSettings.reactionDelay:F2}s - 사격 불가)</b></color>"
+                    : $"<color=lime><b>조준 집중 중 ({lockTime:F2}s 유지)</b></color>";
+
+                GUILayout.Label($"동적 명중률([T]토글): <color=cyan><b>ON</b></color> | {lockStatus}", new GUIStyle(GUI.skin.label) { richText = true });
+                GUILayout.Label($"실시간 명중률: <color=yellow><b>{currentAcc:F1}%</b></color> (0.22s 25% → 1.0s 80% 포화 곡선)", new GUIStyle(GUI.skin.label) { richText = true });
+            }
+            else
+            {
+                float fixedAcc = (shootingSettings != null ? shootingSettings.accuracy : 0.25f) * 100f;
+                GUILayout.Label($"동적 명중률([T]토글): <color=gray>OFF</color> | 고정 명중률: <color=yellow><b>{fixedAcc:F1}%</b></color>", new GUIStyle(GUI.skin.label) { richText = true });
+            }
+
             GUILayout.Label($"발사 입력 (Fire): {(movementController.CurrentInput.IsFire ? "<color=red><b>FIRE HELD</b></color>" : "HOLD")} | 쿨다운: {CooldownRemaining:F2}s", new GUIStyle(GUI.skin.label) { richText = true });
-            GUILayout.Label($"최근 사격 로그: <color=yellow>{lastShotLog}</color>", new GUIStyle(GUI.skin.label) { richText = true });
-            GUILayout.Label($"조작: [Space / 좌클릭: 사격] | [WASD: 이동] | [Ctrl/C: 앉기] | [R: 리셋]");
+            GUILayout.Label($"최근 사격: <color=yellow>{lastShotLog}</color>", new GUIStyle(GUI.skin.label) { richText = true });
+            GUILayout.Label($"조작: [Space/좌클릭: 사격] | [WASD: 이동] | [Ctrl/C: 앉기] | [T: 명중률토글] | [R: 리셋]");
             GUILayout.EndArea();
         }
     }

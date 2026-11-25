@@ -16,11 +16,21 @@ namespace Reinforcement.Shooting
         private bool active, held;
         private System.Random random;
         private Quaternion restRotation;
+        private ShotActor currentTrackedTarget;
+        private double targetAcquiredTime = -1d;
 
         public ShotActor Target { get; private set; }
         public ShotStatus Status { get; private set; }
         public ShotResult LastShot { get; private set; }
         public int MissDirectionFailures { get; private set; }
+        public double TargetLockDuration(double time) =>
+            (targetAcquiredTime >= 0d && time >= targetAcquiredTime) ? (time - targetAcquiredTime) : 0d;
+        public float CurrentAccuracy(double time)
+        {
+            if (settings == null) return 0f;
+            if (!settings.useDynamicAccuracy) return settings.accuracy;
+            return settings.CalculateDynamicAccuracy(TargetLockDuration(time));
+        }
         public event Action<ShotResult> ShotResolved;
 
         private void Awake()
@@ -50,6 +60,8 @@ namespace Reinforcement.Shooting
             sequence = 0;
             LastShot = default;
             MissDirectionFailures = 0;
+            currentTrackedTarget = null;
+            targetAcquiredTime = -1d;
             Status = ShotStatus.NoTarget;
         }
 
@@ -77,6 +89,8 @@ namespace Reinforcement.Shooting
             if (!active || !isActiveAndEnabled || !ValidRig() || !owner.isActiveAndEnabled || !owner.Alive
                 || !Eligible(Target) || !(time >= clock.Time) || double.IsInfinity(time)
                 || RemainingCooldown(time) > 0)
+                return false;
+            if (settings != null && settings.useDynamicAccuracy && TargetLockDuration(time) < settings.reactionDelay)
                 return false;
             bool blocked = ShotPhysics.CheckMount(owner, mount.position, muzzle.position, settings.mask,
                 out var contact);
@@ -113,6 +127,13 @@ namespace Reinforcement.Shooting
                 Status = ShotStatus.NoTarget;
                 return;
             }
+
+            if (Target != currentTrackedTarget)
+            {
+                currentTrackedTarget = Target;
+                targetAcquiredTime = Target ? time : -1d;
+            }
+
             Vector3 origin = muzzle.position;
             Vector3 direction = (aimPoint - origin).normalized;
             if (direction == Vector3.zero)
@@ -121,6 +142,14 @@ namespace Reinforcement.Shooting
                 return;
             }
             AlignMuzzle(direction);
+
+            double lockDuration = TargetLockDuration(time);
+            if (settings != null && settings.useDynamicAccuracy && lockDuration < settings.reactionDelay)
+            {
+                Status = ShotStatus.Aiming;
+                return;
+            }
+
             if (RemainingCooldown(time) > 0)
             {
                 Status = ShotStatus.Cooldown;
@@ -136,7 +165,9 @@ namespace Reinforcement.Shooting
                 return;
             }
             double hitRoll = random.NextDouble();
-            bool aimed = settings.IsHitRoll(hitRoll);
+            bool aimed = settings != null && settings.useDynamicAccuracy
+                ? settings.IsHitRoll(hitRoll, lockDuration)
+                : (settings != null && settings.IsHitRoll(hitRoll));
             if (!aimed && !ShotPhysics.ClearMissDirection(Target, origin, aimPoint, settings.range,
                 settings.mask, random, out direction))
             {
@@ -144,7 +175,10 @@ namespace Reinforcement.Shooting
                 Status = ShotStatus.MissDirectionUnavailable;
                 return;
             }
-            if (!blocked && aimed && hitRoll < settings.accuracy * settings.headAimChance)
+            float effectiveAccuracy = settings != null && settings.useDynamicAccuracy
+                ? settings.CalculateDynamicAccuracy(lockDuration)
+                : (settings != null ? settings.accuracy : 0f);
+            if (!blocked && aimed && hitRoll < effectiveAccuracy * (settings != null ? settings.headAimChance : 0f))
             {
                 Vector3 headDirection = (Target.HeadAimPoint - origin).normalized;
                 var headContact = ShotPhysics.Trace(owner, origin, headDirection, settings.range, settings.mask);
@@ -258,6 +292,8 @@ namespace Reinforcement.Shooting
         private void ClearTarget()
         {
             Target = null;
+            currentTrackedTarget = null;
+            targetAcquiredTime = -1d;
             if (muzzle && owner && muzzle != mount && muzzle != eye && muzzle != owner.transform
                 && muzzle.IsChildOf(owner.transform))
                 muzzle.localRotation = restRotation;

@@ -340,8 +340,8 @@ namespace Reinforce.Integration
 
         private void OnGUI()
         {
-            const int width = 450;
-            const int height = 180;
+            const int width = 480;
+            const int height = 205;
             int x = (Screen.width - width) / 2;
             int y = 10;
 
@@ -352,6 +352,15 @@ namespace Reinforce.Integration
             string rHP = rival != null ? $"{rival.Health:F0}" : "0";
             string rStatus = rivalWeapon != null ? rivalWeapon.Status.ToString() : "-";
             GUILayout.Label($"<b><color=cyan>Player HP: {pHP}</color></b>   VS   <b><color=orange>Rival HP: {rHP}</color></b>   |   적 반격(B키): {(returnFire ? "<color=red>ON</color>" : "<color=gray>OFF</color>")} ({rStatus})", new GUIStyle(GUI.skin.label) { richText = true, fontSize = 13 });
+
+            if (player != null)
+            {
+                float acc = player.CurrentAccuracy * 100f;
+                float lockTime = player.TargetLockDuration;
+                bool isDyn = player.ShootingSettings != null && player.ShootingSettings.useDynamicAccuracy;
+                string dynText = isDyn ? $"<color=lime>동적 모드</color> (조준: {lockTime:F2}s)" : "<color=gray>고정 모드</color>";
+                GUILayout.Label($"플레이어 명중률: <color=yellow><b>{acc:F1}%</b></color> [{dynText}]", new GUIStyle(GUI.skin.label) { richText = true });
+            }
 
             string coverName = coverMode == 1 ? "1. 개방 (Open)" : (coverMode == 2 ? "2. 낮은 엄폐 (Low Cover 1.4m)" : "3. 완전 엄폐 (Full Cover 2.8m)");
             GUILayout.Label($"현재 엄폐물: <color=yellow><b>{coverName}</b></color>", new GUIStyle(GUI.skin.label) { richText = true });
@@ -366,8 +375,8 @@ namespace Reinforce.Integration
                 GUILayout.Label($"상태: 교전 진행 중 (시간: {elapsed:F1}s)");
             }
 
-            GUILayout.Space(5);
-            GUILayout.Label("단축키: [1/2/3: 엄폐물 변경] | [B: 적 사격 ON/OFF] | [R: 라운드 리셋]");
+            GUILayout.Space(3);
+            GUILayout.Label("단축키: [1/2/3: 엄폐물 변경] | [B: 적 사격] | [T: 명중률 토글] | [R: 리셋]");
             GUILayout.EndArea();
         }
     }
