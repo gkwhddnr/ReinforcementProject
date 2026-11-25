@@ -27,6 +27,12 @@ namespace ReinProject.Landscape
 
         private void Start()
         {
+            if (TryGetComponent(out ArenaSpawnManager _))
+            {
+                // 동적 스폰 매니저(ArenaSpawnManager)가 활성화되어 있으면 스폰 관리를 위임합니다.
+                return;
+            }
+
             if (_teamA == _teamB || !TryGetInput(_teamA, out _) || !TryGetInput(_teamB, out _))
             {
                 StopSetup("Two distinct active combatants with movement and agent input are required.");

@@ -33,7 +33,7 @@ namespace ReinProject.Landscape
         [SerializeField] private LayerMask _collisionMask = ~0;
 
         [Header("HUD 설정")]
-        [SerializeField] private bool _showHUD = true;
+        [SerializeField] private bool _showHUD = false;
 
         private Camera _camera;
         private SpectatorMode _currentMode = SpectatorMode.Overview;

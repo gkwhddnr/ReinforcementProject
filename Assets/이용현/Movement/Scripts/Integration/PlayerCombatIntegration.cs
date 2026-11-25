@@ -118,6 +118,8 @@ namespace Reinforce.Integration
                 }
             }
 
+            // [이승재 ShootingTrial1v1 표준 양식]
+            // 1. Mount: 플레이어 중심 기준 높이 1.24m (어깨 총기 마운트)
             if (mount == null)
             {
                 Transform found = transform.Find("Mount");
@@ -126,24 +128,58 @@ namespace Reinforce.Integration
                 {
                     GameObject go = new GameObject("Mount");
                     go.transform.SetParent(transform, false);
-                    go.transform.localPosition = new Vector3(0.48f, 1.24f, 0f);
+                    go.transform.localPosition = new Vector3(0f, 1.24f, 0f);
                     mount = go.transform;
                 }
             }
+            if (mount != null)
+            {
+                mount.localPosition = new Vector3(0f, 1.24f, 0f);
+            }
 
+            // 2. Right muzzle: Mount의 자식으로, 우측 0.48m, 전방 0.46m
             if (muzzle == null)
             {
-                Transform found = mount != null ? mount.Find("Muzzle") : transform.Find("Muzzle");
+                Transform found = mount != null ? (mount.Find("Right muzzle") ?? mount.Find("Muzzle")) : (transform.Find("Right muzzle") ?? transform.Find("Muzzle"));
                 if (found != null) muzzle = found;
                 else
                 {
-                    GameObject go = GameObject.CreatePrimitive(PrimitiveType.Cube);
-                    go.name = "Muzzle";
+                    GameObject go = new GameObject("Right muzzle");
                     go.transform.SetParent(mount != null ? mount : transform, false);
-                    go.transform.localPosition = new Vector3(0f, 0f, 0.46f);
-                    go.transform.localScale = new Vector3(0.12f, 0.12f, 0.35f);
-                    Destroy(go.GetComponent<Collider>()); // 총구 자체 콜라이더 제거
+                    go.transform.localPosition = new Vector3(0.48f, 0f, 0.46f);
                     muzzle = go.transform;
+                }
+            }
+            if (muzzle != null)
+            {
+                muzzle.name = "Right muzzle";
+                if (mount != null && muzzle.parent != mount)
+                {
+                    muzzle.SetParent(mount, false);
+                }
+                muzzle.localPosition = new Vector3(0.48f, 0f, 0.46f);
+
+                // 3. Barrel: Right muzzle의 자식으로 시각적 총신 큐브 메쉬 (0.12, 0.12, 0.35, 회색)
+                Transform barrel = muzzle.Find("Barrel");
+                if (barrel == null)
+                {
+                    GameObject bObj = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                    bObj.name = "Barrel";
+                    bObj.transform.SetParent(muzzle, false);
+                    bObj.transform.localPosition = Vector3.zero;
+                    bObj.transform.localRotation = Quaternion.identity;
+                    bObj.transform.localScale = new Vector3(0.12f, 0.12f, 0.35f);
+                    Destroy(bObj.GetComponent<Collider>());
+
+                    Renderer rend = bObj.GetComponent<Renderer>();
+                    if (rend != null)
+                    {
+                        Shader s = Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard");
+                        if (s != null)
+                        {
+                            rend.material = new Material(s) { color = Color.gray };
+                        }
+                    }
                 }
             }
         }

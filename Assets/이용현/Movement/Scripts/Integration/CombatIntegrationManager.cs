@@ -124,16 +124,16 @@ namespace Reinforce.Integration
                 eyeObj.transform.SetParent(rivalObj.transform, false);
                 eyeObj.transform.localPosition = new Vector3(0f, 1.82f, 0f);
 
-                // Mount (총기 장착점) - 높이 1.24m, 우측 0.48m
+                // Mount (총기 장착점) - 이승재 TrialActor 양식: 높이 1.24m (중앙)
                 GameObject mountObj = new GameObject("Mount");
                 mountObj.transform.SetParent(rivalObj.transform, false);
-                mountObj.transform.localPosition = new Vector3(0.48f, 1.24f, 0f);
+                mountObj.transform.localPosition = new Vector3(0f, 1.24f, 0f);
 
-                // Muzzle (총구) - Mount 자식, 전방 0.46m
+                // Right muzzle (총구) - Mount 자식, 우측 0.48m, 전방 0.46m
                 GameObject muzzleObj = GameObject.CreatePrimitive(PrimitiveType.Cube);
-                muzzleObj.name = "Muzzle";
+                muzzleObj.name = "Right muzzle";
                 muzzleObj.transform.SetParent(mountObj.transform, false);
-                muzzleObj.transform.localPosition = new Vector3(0f, 0f, 0.46f);
+                muzzleObj.transform.localPosition = new Vector3(0.48f, 0f, 0.46f);
                 muzzleObj.transform.localScale = new Vector3(0.12f, 0.12f, 0.35f);
                 Destroy(muzzleObj.GetComponent<Collider>());
                 Renderer mr = muzzleObj.GetComponent<Renderer>();
@@ -149,7 +149,7 @@ namespace Reinforce.Integration
                 Transform bodyT = rival.transform.Find("Body");
                 Transform eyeT = rival.transform.Find("Eye");
                 Transform mountT = rival.transform.Find("Mount");
-                Transform muzzleT = mountT != null ? mountT.Find("Muzzle") : null;
+                Transform muzzleT = mountT != null ? (mountT.Find("Right muzzle") ?? mountT.Find("Muzzle")) : null;
                 rival.Configure(2, 2, bodyT, eyeT, mountT, muzzleT);
             }
 
