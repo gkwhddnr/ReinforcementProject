@@ -1,0 +1,20 @@
+behaviors:
+  DuelPPO:
+    trainer_type: ppo
+    hyperparameters:
+      batch_size: 128
+      buffer_size: 2048
+      learning_rate: 0.0003
+    network_settings:
+      normalize: false
+      hidden_units: 128
+      num_layers: 2
+    reward_signals:
+      extrinsic:
+        gamma: 0.99
+        strength: 1.0
+    # Connection smoke-run budget. Agree on the training budget after integration.
+    max_steps: 10000
+    time_horizon: 128
+    summary_freq: 1000
+    checkpoint_interval: 5000
