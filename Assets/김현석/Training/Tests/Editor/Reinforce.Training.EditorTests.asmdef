@@ -3,6 +3,7 @@
     "references": [
         "Reinforce.Decision",
         "Reinforce.Training",
+        "Reinforcement.Shooting",
         "Unity.ML-Agents"
     ],
     "includePlatforms": ["Editor"],
