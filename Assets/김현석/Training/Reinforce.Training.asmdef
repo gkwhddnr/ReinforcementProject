@@ -3,6 +3,7 @@
     "rootNamespace": "Reinforce.Training",
     "references": [
         "Reinforce.Decision",
+        "Reinforcement.Shooting",
         "Unity.ML-Agents"
     ]
 }
